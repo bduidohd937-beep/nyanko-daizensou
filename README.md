@@ -42,6 +42,7 @@ python -m http.server 8000     # 또는 npx serve .
 | `U` | 워커 강화 (수입 증가) |
 | `스페이스` | 일시정지 / 재개 · 컷신 다음 문장 |
 | `F` | 게임 속도 ×1 / ×2 |
+| `🎵 BGM` / `🔊 효과음` | 사운드 온·오프 (설정 저장) |
 
 ### 유닛 특수 능력
 
@@ -63,6 +64,7 @@ python -m http.server 8000     # 또는 npx serve .
 | `style.css` | 다크 테마 + 컷신 스타일 |
 | `data.js` | 콘텐츠 데이터 (스토리·유닛·보스·액트) |
 | `game.js` | 엔진 (전투 AI·보스 메커니즘·렌더링) |
+| `audio.js` | 사운드 (Web Audio 합성 BGM 4트랙 + 효과음 24종) |
 | `assets/` | 이미지 에셋 (없으면 이모지 대체) |
 
 이미지 넣는 법은 [assets/README.md](assets/README.md) 참고.
@@ -70,3 +72,5 @@ python -m http.server 8000     # 또는 npx serve .
 ## 기술 스택
 
 순수 HTML / CSS / JavaScript (캔버스 2D), 외부 의존성 없음.
+오디오 파일도 없음 — BGM/효과음은 전부 Web Audio API로 실시간 합성합니다.
+(브라우저 정책상 첫 클릭 후 소리가 시작됩니다)

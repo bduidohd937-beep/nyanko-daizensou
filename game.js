@@ -85,7 +85,13 @@ function newBattle(actIdx) {
     hazard: b.hazard || null, hazardT: b.hazard ? b.hazard.interval : 999,
     boss: null, bossDef: null, bossPhase: 0, bossPending: b.boss ? (b.bossAt || 10) : null,
     over: null, shake: 0,
+    pendingSpawns: [],   // 게임 시간 기준 소환 대기열 (일시정지/배속 안전)
   };
+}
+
+// 게임 시간 기준 지연 소환 등록 (실시간 setTimeout 미사용)
+function scheduleSpawn(delaySec, fn) {
+  state.pendingSpawns.push({ at: state.t + delaySec, fn });
 }
 
 /* ================= 스폰 ================= */
@@ -169,6 +175,7 @@ function applyDamage(target, amount, opts = {}) {
     if (target.isBoss) onBossDeath();
     if (target.team === 'civ') {
       state.lost++;
+      Sound.sfx('lost');
       floatText(target.x, target.y - 30, '주민 사망', '#ff5252');
     }
   }
@@ -191,6 +198,7 @@ function updateBoss(b, dt) {
     const ph = phases[state.bossPhase];
     b.phaseMods = Object.assign({}, ph.mods || {});
     state.shake = .4;
+    Sound.sfx('phase');
     floatText(b.x, b.y - b.def.size - 40, 'PHASE — ' + ph.name, '#ffd54f');
     burst(b.x, b.y, ELEMENT_COLORS[ph.element || def.element] || '#ffd54f', 30);
   }
@@ -226,6 +234,7 @@ function bossAbility(b, move) {
   const players = state.units.filter(u => u.team === 'player' && u.hp > 0);
   switch (move.id) {
     case 'quake': { // 지진: 보스 근처 아군에 지연 폭발 + 스턴
+      Sound.sfx('rumble');
       const near = players.filter(u => Math.abs(u.x - b.x) < 450);
       const picks = near.length ? near.slice().sort(() => Math.random() - .5).slice(0, 2)
         : [{ x: b.x - 200 }];
@@ -244,6 +253,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'rockwall': { // 바위벽: 아군 진격을 막는 장벽
+      Sound.sfx('rumble');
       for (let i = 0; i < 2; i++) {
         const x = Math.max(PLAYER_BASE_X + 140, b.x - 220 - i * 170);
         state.walls.push({ x, hp: 900, maxHp: 900, t: 16 });
@@ -252,24 +262,29 @@ function bossAbility(b, move) {
       break;
     }
     case 'summon': {
+      Sound.sfx('summonBig');
       for (let i = 0; i < (move.n || 1); i++) {
-        setTimeout(() => { if (state && !state.over) spawnEnemy(move.unit, { x: b.x - 50 - i * 40 }); }, i * 350);
+        const idx = i, unit = move.unit;
+        scheduleSpawn(idx * 0.35, () => spawnEnemy(unit, { x: b.x - 50 - idx * 40 }));
       }
       burst(b.x, b.y, '#b39ddb', 18);
       break;
     }
     case 'advance': { // 지속 전진
+      Sound.sfx('whoosh');
       b.speedMul = 1.6; b.speedBuff = move.dur || 4; b.glideT = (move.dur || 4) + 2;
       floatText(b.x, b.y - b.def.size - 40, '전진!', '#ff8a65');
       break;
     }
     case 'floodRise': {
+      Sound.sfx('splash');
       state.flood = Math.min(1, state.flood + .25);
       state.shake = .3;
       floatText(W / 2, GROUND - 100, '수위 상승!', '#4fc3f7');
       break;
     }
     case 'waterWave': { // 물살 밀치기
+      Sound.sfx('splash');
       for (const u of players) {
         if (Math.abs(u.x - b.x) < 340) applyDamage(u, 300, { knock: -70, color: '#4fc3f7' });
       }
@@ -278,12 +293,14 @@ function bossAbility(b, move) {
       break;
     }
     case 'heal': {
+      Sound.sfx('heal');
       b.hp = Math.min(b.maxHp, b.hp + b.maxHp * .06);
       floatText(b.x, b.y - b.def.size - 40, '+10%', '#66bb6a');
       burst(b.x, b.y, '#66bb6a', 20);
       break;
     }
     case 'fireZones': { // 화염 지대 설치
+      Sound.sfx('fire');
       for (let i = 0; i < 3; i++) {
         const x = 240 + Math.random() * (W - 540);
         state.fireZones.push({ x, w: 150, t: 8 });
@@ -292,6 +309,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'explosion': {
+      Sound.sfx('boom');
       state.shake = .5;
       burst(b.x, b.y, '#ff7043', 40);
       for (const u of players) {
@@ -301,6 +319,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'burnWave': {
+      Sound.sfx('fire');
       for (const u of players) {
         if (Math.abs(u.x - b.x) < 300) applyDamage(u, 350, { burn: { dps: 50, dur: 5 }, knock: -60, color: '#ff7043' });
       }
@@ -308,6 +327,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'blink': { // 순간 이동(전진)
+      Sound.sfx('zap');
       b.x = Math.max(PLAYER_BASE_X + 160, b.x - 280);
       b.glideT = 6;
       burst(b.x, b.y, '#ffee58', 26);
@@ -315,6 +335,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'chainBoss': {
+      Sound.sfx('zap');
       const near = players.filter(u => Math.abs(u.x - b.x) < 600);
       const picks = near.sort((a, c) => Math.abs(a.x - b.x) - Math.abs(c.x - b.x)).slice(0, 3);
       for (const p of picks) {
@@ -326,6 +347,7 @@ function bossAbility(b, move) {
       break;
     }
     case 'dash': {
+      Sound.sfx('whoosh');
       b.speedMul = 3; b.speedBuff = move.dur || 1.6; b.glideT = (move.dur || 1.6) + 3;
       floatText(b.x, b.y - b.def.size - 40, '돌진!', '#ffee58');
       break;
@@ -418,6 +440,7 @@ function updateUnit(u, dt) {
     if (u.x <= PLAYER_BASE_X + 30) {
       u.hp = 0;
       state.rescued++;
+      Sound.sfx('rescue');
       floatText(u.x, u.y - 30, '구출!', '#66bb6a');
       burst(u.x, u.y, '#66bb6a', 12);
     }
@@ -499,6 +522,8 @@ function unitAttack(u, target) {
   const dir = u.team === 'player' ? 1 : -1;
   let dmg = effectiveAtk(u);
   let crit = false;
+  // 타격음: 원거리=활소리, 근접=타격음 (스로틀링은 audio.js에서 처리)
+  Sound.sfx(u.def.range > 100 ? 'shot' : 'hit');
 
   if (u.team === 'player' && ab) {
     switch (ab.type) {
@@ -560,6 +585,7 @@ function unitAttack(u, target) {
     crit, color: crit ? '#ffd54f' : (u.team === 'player' ? '#ffe082' : '#ff8a65'),
     knock: crit ? dir * 90 : 0,
   });
+  if (crit) Sound.sfx('crit');
 }
 function telegraphX(x, delay, onDone) { telegraph(x, 90, delay, '#ffd54f', onDone); }
 
@@ -638,6 +664,7 @@ function checkObjective() {
 function endGame(win) {
   if (state.over) return;
   state.over = win ? 'win' : 'lose';
+  Sound.sfx(win ? 'win' : 'lose');
   setTimeout(() => {
     if (win) {
       clearedSet.add(state.act.id);
@@ -661,15 +688,19 @@ function update(dt) {
   // 수입
   state.money += state.incomeRate * dt;
 
+  // 게임 시간 기준 소환 대기열 처리
+  if (state.pendingSpawns.length) {
+    const ready = state.pendingSpawns.filter(p => p.at <= state.t);
+    state.pendingSpawns = state.pendingSpawns.filter(p => p.at > state.t);
+    for (const p of ready) p.fn();
+  }
+
   // 웨이브
   while (state.waveIdx < b.waves.length && b.waves[state.waveIdx].at <= state.t) {
     const w = b.waves[state.waveIdx++];
     for (let i = 0; i < w.n; i++) {
-      const delay = i * 450;
-      setTimeout(() => {
-        if (!state || state.over) return;
-        spawnEnemy(w.unit, w.side === 'ally' ? { x: PLAYER_BASE_X + 130 } : { scale: w.scale || 1 });
-      }, delay);
+      const opts = w.side === 'ally' ? { x: PLAYER_BASE_X + 130 } : { scale: w.scale || 1 };
+      scheduleSpawn(i * 0.45, () => spawnEnemy(w.unit, opts));
     }
   }
   // 지속 증원
@@ -698,6 +729,8 @@ function update(dt) {
     const boss = spawnUnit('enemy', def, { boss: true, x: ENEMY_BASE_X - 70 });
     boss.y = GROUND - def.size;
     state.shake = .6;
+    Sound.sfx('boss');
+    Sound.music('boss');
     floatText(boss.x, boss.y - def.size - 50, def.name + ' 등장!', '#ff8a65');
     burst(boss.x, boss.y, '#ff7043', 40);
     $('bossBar').classList.remove('hidden');
@@ -1064,6 +1097,7 @@ function buyUnit(id) {
   state.money -= def.cost;
   state.cds[id] = def.cd;
   spawnPlayer(id);
+  Sound.sfx('buy');
 }
 
 function useSkill(id) {
@@ -1074,6 +1108,7 @@ function useSkill(id) {
   if (!casterAlive) return;
 
   if (id === 'excalibur') {
+    Sound.sfx('skill');
     state.shake = .6;
     for (const e of state.units) {
       if (e.team === 'enemy' || e.team === 'boss') {
@@ -1086,6 +1121,7 @@ function useSkill(id) {
     burst(W / 2, GROUND - 60, '#ffd54f', 60);
     floatText(W / 2, 120, '엑스칼리버!', '#ffd54f');
   } else if (id === 'meteorCall') {
+    Sound.sfx('skill');
     const enemies = state.units.filter(e => e.team === 'enemy' || e.team === 'boss');
     const spots = enemies.length
       ? enemies.map(e => e.x)
@@ -1106,6 +1142,7 @@ function useSkill(id) {
 }
 
 function flashWallet() {
+  Sound.sfx('error');
   const w = $('wallet');
   w.style.color = '#ff5252';
   setTimeout(() => (w.style.color = ''), 300);
@@ -1117,6 +1154,7 @@ function upgradeIncome() {
   state.incomeLv++;
   state.incomeRate += 8;
   state.incomeCost = Math.round(state.incomeCost * 1.55);
+  Sound.sfx('upgrade');
 }
 
 function updateUI() {
@@ -1229,6 +1267,7 @@ function advanceStory() {
     storyText.textContent = storyText.dataset.full;
     return;
   }
+  Sound.sfx('tick');
   nextStoryLine();
 }
 storyOverlay.addEventListener('click', e => {
@@ -1247,6 +1286,7 @@ $('storySkip').addEventListener('click', () => {
 function showMap() {
   mode = 'map';
   state = null;
+  Sound.music('menu');
   $('bossBar').classList.add('hidden');
   overlay.classList.add('show');
   storyOverlay.classList.remove('show');
@@ -1290,18 +1330,20 @@ function startAct(idx) {
     state = newBattle(idx);
     mode = 'battle';
     paused = false; speed = 1;
+    Sound.music('battle');
     $('pauseBtn').textContent = '일시정지';
     $('speedBtn').textContent = '×1';
     $('objectiveText').textContent = objectiveText();
     if (rafId === null) { lastTs = performance.now(); loop(lastTs); }
   };
 
-  if (act.intro && act.intro.length) playStory(act.intro, beginBattle);
+  if (act.intro && act.intro.length) { Sound.music('story'); playStory(act.intro, beginBattle); }
   else beginBattle();
 }
 
 function showResult(win) {
   mode = 'map';
+  Sound.music('menu');
   overlay.classList.add('show');
   const act = CHAPTER.acts[currentAct];
   const isFinal = win && currentAct >= CHAPTER.acts.length - 1;
@@ -1370,6 +1412,15 @@ $('upgradeBtn').addEventListener('click', upgradeIncome);
 $('pauseBtn').addEventListener('click', togglePause);
 $('speedBtn').addEventListener('click', toggleSpeed);
 $('menuBtn').addEventListener('click', () => { if (mode === 'battle') showMap(); });
+
+// 사운드 토글
+function syncSoundBtns() {
+  $('bgmBtn').classList.toggle('off', !Sound.bgmOn());
+  $('sfxBtn').classList.toggle('off', !Sound.sfxOn());
+}
+$('bgmBtn').addEventListener('click', () => { Sound.toggleBGM(); syncSoundBtns(); Sound.sfx('click'); });
+$('sfxBtn').addEventListener('click', () => { const on = Sound.toggleSFX(); syncSoundBtns(); if (on) Sound.sfx('click'); });
+syncSoundBtns();
 
 /* ================= 시작 ================= */
 buildUnitBar();

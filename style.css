@@ -79,6 +79,7 @@ button.ctl {
 }
 button.ctl:hover:not(:disabled) { background: #4d3e73; }
 button.ctl:disabled { opacity: .45; cursor: not-allowed; }
+button.ctl.off { opacity: .5; text-decoration: line-through; }
 #upgradeCost { color: #ffe082; }
 
 canvas#game {
