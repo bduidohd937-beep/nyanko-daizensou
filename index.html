@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>냥코대전쟁 — CHAPTER 1 퓨어월드</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="hp-group">
+      <span class="hp-label">왕국 성</span>
+      <div class="hp-bar player"><div id="playerHp" class="hp-fill"></div></div>
+      <span id="playerHpText" class="hp-text">10000/10000</span>
+    </div>
+    <div class="stage-info">
+      <span id="actKind">ACT 1</span>
+      <span id="actTitle">첫 균열</span>
+      <span id="timer">0:00</span>
+    </div>
+    <div class="hp-group enemy">
+      <span class="hp-label">균열</span>
+      <div class="hp-bar enemy"><div id="enemyHp" class="hp-fill"></div></div>
+      <span id="enemyHpText" class="hp-text">14000/14000</span>
+    </div>
+  </header>
+
+  <div id="bossBar" class="hidden">
+    <span id="bossIcon">⛰️</span>
+    <div class="boss-mid">
+      <div class="boss-name-row">
+        <span id="bossName">보스</span>
+        <span id="bossPhase">PHASE 1</span>
+      </div>
+      <div class="hp-bar boss"><div id="bossHp" class="hp-fill"></div></div>
+    </div>
+    <span id="bossHpText" class="hp-text">0/0</span>
+  </div>
+
+  <div id="objectiveBar"><span id="objectiveText">목표</span></div>
+
+  <div id="resbar">
+    <div id="wallet">✦ <span id="money">0</span></div>
+    <button id="upgradeBtn" class="ctl">워커 강화 <span id="upgradeCost">₩150</span></button>
+    <div class="spacer"></div>
+    <button id="speedBtn" class="ctl">×1</button>
+    <button id="pauseBtn" class="ctl">일시정지</button>
+    <button id="menuBtn" class="ctl">캠페인 맵</button>
+  </div>
+
+  <canvas id="game" width="1200" height="440"></canvas>
+
+  <div id="unitBar"></div>
+  <div id="skillBar"></div>
+
+  <!-- 스토리 컷신 -->
+  <div id="storyOverlay" class="show">
+    <div class="story-panel">
+      <div id="storyScene" class="story-scene"></div>
+      <div class="story-box">
+        <div id="storySpeaker"></div>
+        <div id="storyText"></div>
+        <div class="story-advance" id="storyAdvance">▼ 클릭 / 스페이스</div>
+      </div>
+      <button id="storySkip" class="story-skip">스토리 건너뛰기 ▶</button>
+    </div>
+  </div>
+
+  <!-- 메인 오버레이 (캠페인 맵 / 결과) -->
+  <div id="overlay" class="show">
+    <div class="panel wide">
+      <h1 id="ovTitle">냥코대전쟁</h1>
+      <p class="subtitle" id="ovSub">CHAPTER 1 — 퓨어월드</p>
+      <p id="ovDesc">퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.</p>
+      <div id="actList"></div>
+      <div id="ovBtns"></div>
+      <p class="hint">단축키: 1~7 병사 · Q/W 스킬 · U 워커 강화 · 스페이스 일시정지 · F 속도</p>
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

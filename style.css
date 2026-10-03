@@ -1,0 +1,279 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: #16121f;
+  color: #f4efe6;
+  font-family: "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  display: flex;
+  justify-content: center;
+  min-height: 100vh;
+}
+
+#app {
+  width: 100%;
+  max-width: 1020px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: relative;
+}
+
+#topbar, #resbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #221a33;
+  border: 1px solid #3b2f57;
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.hp-group { display: flex; align-items: center; gap: 8px; flex: 1; }
+.hp-group.enemy { flex-direction: row-reverse; }
+.hp-label { font-size: 13px; white-space: nowrap; opacity: .9; }
+.hp-bar { flex: 1; height: 16px; background: #0d0a15; border-radius: 8px; overflow: hidden; border: 1px solid #4a3b6e; }
+.hp-fill { height: 100%; width: 100%; transition: width .2s; }
+.hp-bar.player .hp-fill { background: linear-gradient(90deg, #4fc3f7, #29b6f6); }
+.hp-bar.enemy .hp-fill { background: linear-gradient(90deg, #ef5350, #e53935); float: right; }
+.hp-bar.boss .hp-fill { background: linear-gradient(90deg, #ff7043, #d32f2f); }
+.hp-text { font-size: 11px; opacity: .8; min-width: 78px; text-align: center; }
+
+.stage-info { display: flex; flex-direction: column; align-items: center; min-width: 150px; }
+.stage-info #actKind { font-size: 10px; letter-spacing: 2px; color: #b39ddb; }
+.stage-info #actTitle { font-weight: bold; color: #ffd54f; font-size: 15px; }
+.stage-info #timer { opacity: .7; font-size: 12px; }
+
+/* 보스 HP 바 */
+#bossBar {
+  display: flex; align-items: center; gap: 10px;
+  background: linear-gradient(90deg, #2e1b1b, #3a1f2e);
+  border: 1px solid #8d4a4a;
+  border-radius: 10px;
+  padding: 6px 12px;
+}
+#bossBar.hidden { display: none; }
+#bossIcon { font-size: 30px; }
+.boss-mid { flex: 1; }
+.boss-name-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 3px; }
+#bossName { font-weight: bold; color: #ff8a65; }
+#bossPhase { color: #ffd54f; font-size: 11px; letter-spacing: 1px; }
+
+/* 목표 바 */
+#objectiveBar {
+  background: #2b2340;
+  border: 1px solid #5a4a85;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  text-align: center;
+  color: #ffe082;
+}
+
+#wallet { font-size: 18px; font-weight: bold; color: #ffe082; min-width: 110px; }
+.spacer { flex: 1; }
+
+button.ctl {
+  background: #3b2f57; color: #f4efe6; border: 1px solid #5a4a85;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+button.ctl:hover:not(:disabled) { background: #4d3e73; }
+button.ctl:disabled { opacity: .45; cursor: not-allowed; }
+#upgradeCost { color: #ffe082; }
+
+canvas#game {
+  width: 100%;
+  background: #87ceeb;
+  border: 2px solid #3b2f57;
+  border-radius: 10px;
+  display: block;
+}
+
+/* 유닛 바 */
+#unitBar { display: flex; gap: 6px; flex-wrap: wrap; }
+
+.unit-btn {
+  position: relative;
+  flex: 1;
+  min-width: 96px;
+  background: #221a33;
+  border: 1px solid #5a4a85;
+  border-radius: 10px;
+  padding: 7px 4px;
+  cursor: pointer;
+  text-align: center;
+  overflow: hidden;
+  color: #f4efe6;
+}
+.unit-btn:hover:not(.locked) { background: #2e2444; border-color: #ffd54f; }
+.unit-btn .icon { font-size: 24px; display: block; }
+.unit-btn .uname { font-size: 12px; font-weight: bold; display: block; margin-top: 1px; }
+.unit-btn .ucost { font-size: 11px; color: #ffe082; display: block; }
+.unit-btn .ukey { position: absolute; top: 2px; left: 4px; font-size: 10px; opacity: .5; }
+.unit-btn.main { border-color: #ffd54f66; }
+.unit-btn.locked { opacity: .5; cursor: not-allowed; }
+.unit-btn .cool { display: none; }
+.unit-btn.cooling .cool {
+  position: absolute; inset: 0; background: rgba(0,0,0,.7);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #fff;
+}
+.unit-btn.cooling .cool { display: flex; }
+
+/* 스킬 바 */
+#skillBar { display: flex; gap: 8px; }
+.skill-btn {
+  position: relative;
+  flex: 1;
+  background: linear-gradient(180deg, #3a2c5e, #2a2044);
+  border: 1px solid #7e6bbf;
+  border-radius: 10px;
+  padding: 8px 10px;
+  color: #e8dfff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow: hidden;
+}
+.skill-btn:hover:not(.locked) { border-color: #ffd54f; }
+.skill-btn .sicon { font-size: 22px; }
+.skill-btn .sinfo { text-align: left; line-height: 1.3; }
+.skill-btn .sname { font-size: 13px; font-weight: bold; display: block; }
+.skill-btn .sdesc { font-size: 11px; opacity: .7; display: block; }
+.skill-btn .skey { position: absolute; top: 4px; right: 6px; font-size: 10px; opacity: .5; }
+.skill-btn.locked { opacity: .45; cursor: not-allowed; }
+.skill-btn .cool {
+  display: none;
+  position: absolute; inset: 0; background: rgba(0,0,0,.7);
+  align-items: center; justify-content: center; font-size: 18px;
+}
+.skill-btn.cooling .cool { display: flex; }
+
+/* ================= 스토리 컷신 ================= */
+#storyOverlay {
+  position: fixed; inset: 0;
+  background: #000;
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 30;
+}
+#storyOverlay.show { display: flex; }
+
+.story-panel {
+  width: min(860px, 94vw);
+  height: min(560px, 92vh);
+  display: flex; flex-direction: column;
+  position: relative;
+}
+
+.story-scene {
+  flex: 1;
+  border-radius: 14px 14px 0 0;
+  background:
+    radial-gradient(ellipse at 50% 120%, rgba(255,213,79,.25), transparent 60%),
+    linear-gradient(180deg, #1b2a4a 0%, #2d2350 60%, #171226 100%);
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+.story-scene .big-char {
+  font-size: clamp(80px, 22vw, 190px);
+  filter: drop-shadow(0 12px 30px rgba(0,0,0,.7));
+  animation: floaty 3s ease-in-out infinite;
+}
+@keyframes floaty { 0%,100% { transform: translateY(0);} 50% { transform: translateY(-14px);} }
+
+.story-box {
+  background: #120e1d;
+  border: 2px solid #5a4a85;
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 16px 22px 26px;
+  min-height: 130px;
+  position: relative;
+}
+#storySpeaker {
+  font-weight: bold; color: #ffd54f; font-size: 15px;
+  margin-bottom: 6px; min-height: 19px;
+}
+#storySpeaker.objective { color: #ff8a65; letter-spacing: 1px; }
+#storyText { font-size: 16px; line-height: 1.75; white-space: pre-wrap; }
+#storyText.objective { font-size: 20px; font-weight: bold; color: #ffe082; text-align: center; margin-top: 12px; }
+#storyText.clear { font-size: 26px; font-weight: bold; color: #ffd54f; text-align: center; margin-top: 18px; letter-spacing: 2px; }
+.story-advance {
+  position: absolute; right: 16px; bottom: 8px;
+  font-size: 11px; opacity: .5; animation: blink 1.2s infinite;
+}
+@keyframes blink { 0%,100% { opacity: .5; } 50% { opacity: .15; } }
+
+.story-skip {
+  position: absolute; top: 10px; right: 10px;
+  background: rgba(0,0,0,.55); color: #f4efe6;
+  border: 1px solid #7e6bbf; border-radius: 8px;
+  padding: 6px 12px; font-size: 12px; cursor: pointer; z-index: 2;
+}
+.story-skip:hover { background: rgba(0,0,0,.8); }
+
+/* ================= 오버레이 / 캠페인 맵 ================= */
+#overlay {
+  position: fixed; inset: 0;
+  background: rgba(10, 7, 18, .9);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 20;
+  overflow-y: auto;
+}
+#overlay.show { display: flex; }
+
+.panel {
+  background: #221a33;
+  border: 2px solid #5a4a85;
+  border-radius: 16px;
+  padding: 26px 32px;
+  max-width: 560px;
+  width: calc(100% - 40px);
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
+  margin: 20px 0;
+}
+.panel.wide { max-width: 760px; }
+.panel h1 { color: #ffd54f; margin-bottom: 4px; font-size: 32px; }
+.panel .subtitle { color: #b39ddb; font-size: 14px; letter-spacing: 3px; margin-bottom: 12px; }
+.panel p { font-size: 14px; line-height: 1.6; opacity: .85; margin-bottom: 14px; }
+.panel .hint { font-size: 12px; opacity: .55; margin-top: 14px; }
+
+/* 액트 목록 */
+#actList { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; max-height: 46vh; overflow-y: auto; padding-right: 4px; }
+.act-row {
+  display: flex; align-items: center; gap: 10px;
+  background: #2e2444; border: 1px solid #5a4a85;
+  border-radius: 10px; padding: 9px 14px;
+  cursor: pointer; text-align: left;
+  color: #f4efe6; font-size: 14px;
+}
+.act-row:hover:not(:disabled) { border-color: #ffd54f; background: #382c55; }
+.act-row:disabled { opacity: .4; cursor: not-allowed; }
+.act-row.cleared { border-color: #66bb6a55; }
+.act-row .kind {
+  font-size: 10px; letter-spacing: 1px; color: #b39ddb;
+  min-width: 74px; flex-shrink: 0;
+}
+.act-row.boss .kind { color: #ff8a65; font-weight: bold; }
+.act-row .title { font-weight: bold; flex: 1; }
+.act-row .mark { font-size: 13px; }
+
+#ovBtns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+button.big {
+  background: linear-gradient(180deg, #ffd54f, #ffb300);
+  color: #221a33; border: none; border-radius: 10px;
+  padding: 12px 34px; font-size: 17px; font-weight: bold; cursor: pointer;
+}
+button.big:hover { filter: brightness(1.08); }
+button.big.alt { background: #3b2f57; color: #f4efe6; border: 1px solid #5a4a85; }
+
+.stage-chip {
+  background: #2e2444; border: 1px solid #5a4a85; color: #f4efe6;
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.stage-chip.active { background: #ffd54f; color: #221a33; border-color: #ffd54f; font-weight: bold; }
