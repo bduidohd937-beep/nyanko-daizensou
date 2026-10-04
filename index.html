@@ -69,15 +69,51 @@
     </div>
   </div>
 
+  <!-- 메인 타이틀 -->
+  <div id="titleScreen" class="show">
+    <div class="title-bg" aria-hidden="true">
+      <span style="--d:0s;--x:6%">🐾</span><span style="--d:1.2s;--x:18%">⚔️</span>
+      <span style="--d:2.4s;--x:32%">🔮</span><span style="--d:.6s;--x:47%">👑</span>
+      <span style="--d:3.1s;--x:61%">🐾</span><span style="--d:1.8s;--x:74%">🛡️</span>
+      <span style="--d:2.9s;--x:86%">✨</span><span style="--d:.9s;--x:94%">❄️</span>
+    </div>
+    <div class="title-inner">
+      <div class="title-cat">🐱</div>
+      <h1 class="title-logo"><span>냥코</span>대전쟁</h1>
+      <div class="title-sub">NYANKO GREAT WAR — CHAPTER 1 · 퓨어월드</div>
+      <div id="titleProgress" class="title-progress">진행률 0%</div>
+      <div class="title-btns">
+        <button id="titleStart" class="big">모험 시작 ▶</button>
+        <button id="titleBgm" class="big alt">🎵 BGM</button>
+        <button id="titleSfx" class="big alt">🔊 효과음</button>
+        <button id="titleHelpBtn" class="big alt">조작법</button>
+        <button id="titleReset" class="big alt danger">기록 초기화</button>
+      </div>
+      <div id="titleHelpBox">
+        <div class="help-grid">
+          <div><b>1~9 · 0</b><span>병사 소환</span></div>
+          <div><b>Q / W</b><span>엑스칼리버 · 대운석</span></div>
+          <div><b>U</b><span>워커 강화</span></div>
+          <div><b>SPACE</b><span>일시정지</span></div>
+          <div><b>F</b><span>배속 ×1/×2</span></div>
+          <div><b>ESC</b><span>캠페인 맵</span></div>
+        </div>
+        <p class="help-tip">성녀·서리검사·폭풍검사 등 12명의 영웅으로 원소 세력을 막아내세요.</p>
+      </div>
+      <div class="title-foot">진행 상황은 브라우저에 자동 저장됩니다</div>
+    </div>
+  </div>
+
   <!-- 메인 오버레이 (캠페인 맵 / 결과) -->
-  <div id="overlay" class="show">
+  <div id="overlay">
     <div class="panel wide">
       <h1 id="ovTitle">냥코대전쟁</h1>
       <p class="subtitle" id="ovSub">CHAPTER 1 — 퓨어월드</p>
       <p id="ovDesc">퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.</p>
+      <div id="mapProgress"><div id="mapFill"></div><span id="mapCount">0/12</span></div>
       <div id="actList"></div>
       <div id="ovBtns"></div>
-      <p class="hint">단축키: 1~7 병사 · Q/W 스킬 · U 워커 강화 · 스페이스 일시정지 · F 속도</p>
+      <p class="hint">단축키: 1~9·0 병사 · Q/W 스킬 · U 워커 강화 · 스페이스 일시정지 · F 속도</p>
     </div>
   </div>
 </div>

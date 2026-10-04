@@ -57,7 +57,7 @@ let state = null;          // 전투 상태
 let currentAct = 0;
 let paused = false, speed = 1;
 let rafId = null, lastTs = 0;
-let mode = 'map';          // map | story | battle
+let mode = 'map';          // title | map | story | battle
 let storyQueue = [], storyDone = null, typeTimer = null;
 
 /* ================= 전투 상태 생성 ================= */
@@ -85,6 +85,7 @@ function newBattle(actIdx) {
     hazard: b.hazard || null, hazardT: b.hazard ? b.hazard.interval : 999,
     boss: null, bossDef: null, bossPhase: 0, bossPending: b.boss ? (b.bossAt || 10) : null,
     over: null, shake: 0,
+    cutin: null, bossIntro: null,   // 연출 오버레이
     pendingSpawns: [],   // 게임 시간 기준 소환 대기열 (일시정지/배속 안전)
   };
 }
@@ -108,6 +109,7 @@ function spawnUnit(team, def, opts = {}) {
     atk: def.atk * scale,
     atkCd: Math.random() * 0.4, stun: 0, burn: null, knock: 0,
     hitFlash: 0, wob: Math.random() * 6.28,
+    spawnT: 0, lungeT: 0, hurtT: 0, moving: false,  // 애니메이션 상태
     speedBuff: 0, speedMul: 1,
     isBoss: !!opts.boss, phaseMods: {},
   };
@@ -156,8 +158,15 @@ function applyDamage(target, amount, opts = {}) {
 
   target.hp -= amount;
   target.hitFlash = .12;
+  target.hurtT = 1;
   if (opts.burn) target.burn = { dps: opts.burn.dps, t: opts.burn.dur };
   if (opts.stun) target.stun = Math.max(target.stun, opts.stun);
+  if (opts.slow) {
+    // 둔화: 남은 시간 중 긴 쪽 유지, 속도는 더 느린 값 적용
+    target.speedBuff = Math.max(target.speedBuff, opts.slow.dur);
+    target.speedMul = Math.min(target.speedMul > 1 ? opts.slow.mul : target.speedMul, opts.slow.mul);
+    if (!target.slowFx) { target.slowFx = true; state.fx.push({ x: target.x, y: target.y - target.def.size, text: '❄', color: '#80d8ff', t: .8, icon: true }); }
+  }
   if (opts.knock) {
     const resist = target.def.knockResist || (target.isBoss ? (target.def.knockResist ?? .8) : 0);
     target.knock = opts.knock * (1 - resist);
@@ -401,6 +410,10 @@ function updateUnit(u, dt) {
   }
   u.hitFlash = Math.max(0, u.hitFlash - dt);
   u.wob += dt * 8;
+  u.spawnT = Math.min(1, u.spawnT + dt * 4);
+  u.lungeT = Math.max(0, u.lungeT - dt * 5);
+  u.hurtT = Math.max(0, u.hurtT - dt * 6);
+  u.moving = false;
   if (u.speedBuff > 0) { u.speedBuff -= dt; if (u.speedBuff <= 0) u.speedMul = 1; }
 
   // 화상
@@ -513,6 +526,7 @@ function updateUnit(u, dt) {
       }
     }
     u.x = nx;
+    u.moving = true;
   }
 }
 
@@ -522,6 +536,7 @@ function unitAttack(u, target) {
   const dir = u.team === 'player' ? 1 : -1;
   let dmg = effectiveAtk(u);
   let crit = false;
+  u.lungeT = 1;   // 공격 런지 모션
   // 타격음: 원거리=활소리, 근접=타격음 (스로틀링은 audio.js에서 처리)
   Sound.sfx(u.def.range > 100 ? 'shot' : 'hit');
 
@@ -559,6 +574,72 @@ function unitAttack(u, target) {
             // 균열은 별도
           }
         });
+        return;
+      }
+      case 'flameBreath': { // 화염용기사: 전방 부채꼴 화염
+        Sound.sfx('fire');
+        const reach = ab.reach || 250;
+        burst(u.x + dir * 70, u.y + u.def.size * .5, '#ff7043', 18);
+        state.fx.push({ x: u.x + dir * reach * .6, y: u.y + 6, text: '🔥', color: '#ff7043', t: .5, icon: true, big: true });
+        for (const e of state.units) {
+          if (!isEnemyOf(u, e)) continue;
+          const d = (e.x - u.x) * dir;
+          if (d > -40 && d < reach) {
+            applyDamage(e, dmg, { burn: { dps: ab.burn, dur: ab.burnDur }, color: '#ff7043' });
+          }
+        }
+        return;
+      }
+      case 'frostHit': // 서리검사: 둔화 + 확률 스턴
+        applyDamage(target, dmg, { slow: { mul: ab.mul, dur: ab.dur }, color: '#80d8ff' });
+        if (Math.random() < ab.stunChance) {
+          applyDamage(target, 0, { stun: ab.stun, color: '#80d8ff' });
+          floatText(target.x, target.y - target.def.size - 24, '빙결!', '#80d8ff');
+        }
+        Sound.sfx('splash');
+        return;
+      case 'smiteHeal': { // 성녀: 공격 + 아군 치유
+        applyDamage(target, dmg, { color: '#fff59d' });
+        let worst = null, worstR = 1;
+        for (const a of state.units) {
+          if (a.team !== 'player' || a.hp <= 0 || a === u) continue;
+          const r = a.hp / a.maxHp;
+          if (r < worstR) { worstR = r; worst = a; }
+        }
+        if (worst && worstR < .999) {
+          const heal = Math.round(dmg * ab.heal);
+          worst.hp = Math.min(worst.maxHp, worst.hp + heal);
+          worst.hurtT = 0;
+          state.fx.push({ x: worst.x, y: worst.y - worst.def.size - 16, text: '+' + heal, color: '#69f0ae', t: 1 });
+          burst(worst.x, worst.y, '#69f0ae', 8);
+          Sound.sfx('heal');
+        }
+        return;
+      }
+      case 'stormChain': { // 폭풍검사: 연쇄 번개
+        applyDamage(target, dmg, { color: '#ffee58' });
+        Sound.sfx('zap');
+        const hits = state.units
+          .filter(e => isEnemyOf(u, e) && e !== target && e.hp > 0 && Math.abs(e.x - target.x) <= ab.jump)
+          .sort((a, b) => Math.abs(a.x - target.x) - Math.abs(b.x - target.x))
+          .slice(0, ab.jumps);
+        for (const e of hits) {
+          applyDamage(e, dmg * ab.mult, { color: '#ffee58' });
+          state.fx.push({ x: (e.x + target.x) / 2, y: u.y - 24, text: '⚡', color: '#ffee58', t: .3, icon: true });
+          burst(e.x, e.y, '#ffee58', 6);
+        }
+        return;
+      }
+      case 'quakeSlam': { // 황금 거수: 지진 충격파
+        Sound.sfx('rumble');
+        state.shake = .35;
+        burst(target.x, GROUND, '#ffcc80', 22);
+        applyDamage(target, dmg, { knock: dir * ab.knock, stun: ab.stun, color: '#ffcc80' });
+        for (const e of state.units) {
+          if (e !== target && e.hp > 0 && isEnemyOf(u, e) && Math.abs(e.x - target.x) <= ab.splash) {
+            applyDamage(e, dmg * .7, { knock: dir * ab.knock * .6, stun: ab.stun * .6, color: '#ffcc80' });
+          }
+        }
         return;
       }
     }
@@ -666,6 +747,7 @@ function endGame(win) {
   state.over = win ? 'win' : 'lose';
   Sound.sfx(win ? 'win' : 'lose');
   setTimeout(() => {
+    if (!state || state.over !== (win ? 'win' : 'lose')) return;  // 중간에 상태가 바뀌면 취소
     if (win) {
       clearedSet.add(state.act.id);
       unlocked = Math.max(unlocked, Math.min(CHAPTER.acts.length, state.actIdx + 2));
@@ -729,6 +811,7 @@ function update(dt) {
     const boss = spawnUnit('enemy', def, { boss: true, x: ENEMY_BASE_X - 70 });
     boss.y = GROUND - def.size;
     state.shake = .6;
+    state.bossIntro = { t: 0, dur: 2.4 };   // 보스 등장 연출
     Sound.sfx('boss');
     Sound.music('boss');
     floatText(boss.x, boss.y - def.size - 50, def.name + ' 등장!', '#ff8a65');
@@ -941,9 +1024,19 @@ function drawWall(w) {
 function drawUnit(u) {
   const s = u.def.size;
   const bounce = Math.sin(u.wob) * 2;
+
+  // 연출 트랜스폼: 소환 팝인 / 공격 런지 / 피격 스퀘시 / 이동 기울임
+  const pop = u.spawnT < 1 ? (u.spawnT < .5 ? 1.3 * (u.spawnT / .5) : 1 + .3 * (1 - (u.spawnT - .5) / .5)) : 1;
+  const lunge = u.lungeT > 0 ? Math.sin((1 - u.lungeT) * Math.PI) * s * .55 * (u.team === 'player' ? 1 : -1) : 0;
+  const hurtSquash = u.hurtT > 0 ? u.hurtT : 0;
+  const sx = pop * (1 + hurtSquash * .25) * (u.moving && u.stun <= 0 ? 1.06 : 1);
+  const sy = pop * (1 - hurtSquash * .22) * (u.moving && u.stun <= 0 ? .95 : 1);
+  const lean = u.moving && u.stun <= 0 ? (u.team === 'player' ? .09 : -.09) : 0;
+
   ctx.save();
-  ctx.translate(u.x, u.y + bounce);
-  if (u.team === 'enemy' || u.team === 'civ') { /* 방향 표시는 눈으로 */ }
+  ctx.translate(u.x + lunge, u.y + bounce);
+  ctx.rotate(lean);
+  ctx.scale(sx, sy);
 
   // 그림자
   ctx.fillStyle = 'rgba(0,0,0,.25)';
@@ -1052,7 +1145,108 @@ function render() {
     const sorted = [...state.units].sort((a, b) => a.def.size - b.def.size);
     for (const u of sorted) drawUnit(u);
     drawEffects();
+    drawBossIntro();
+    drawCutin();
   }
+  ctx.restore();
+}
+
+/* 소환 팝인·피격 등 유닛 모션 위에 얹는 오버레이 연출 */
+function drawBossIntro() {
+  const bi = state.bossIntro;
+  if (!bi) return;
+  bi.t += 1 / 60; // 렌더 기준 소폭 진행 (update 일시정지 시에도 연출만 진행)
+  const p = bi.t / bi.dur;
+  if (p >= 1) { state.bossIntro = null; return; }
+
+  // 1) 검은 글자 막대 (레터박스)
+  const barH = 46;
+  ctx.fillStyle = 'rgba(0,0,0,.75)';
+  ctx.fillRect(-10, -10, W + 20, barH);
+  ctx.fillRect(-10, H - barH + 10, W + 20, barH);
+
+  // 2) 경고 스트라이프 + 보스명
+  const def = state.bossDef;
+  if (def) {
+    const slide = (1 - Math.min(1, p * 3)) * W * .5;
+    ctx.save();
+    ctx.translate(slide, 0);
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 42px sans-serif';
+    ctx.fillStyle = '#ff7043';
+    ctx.fillText('⚠ ' + def.name + ' ⚠', W / 2, H / 2 - 10);
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillStyle = '#ffd54f';
+    ctx.fillText('보스 등장', W / 2, H / 2 + 24);
+    ctx.restore();
+  }
+  // 3) 전방 스캔라이닝
+  ctx.fillStyle = `rgba(255,112,67,${.25 * Math.sin(p * Math.PI)})`;
+  for (let y = barH; y < H - barH; y += 6) ctx.fillRect(-10, y, W + 20, 2);
+}
+
+function drawCutin() {
+  const c = state.cutin;
+  if (!c) return;
+  c.t += 1 / 60;
+  const p = c.t / c.dur;
+  if (p >= 1) { state.cutin = null; return; }
+
+  const inA = Math.min(1, p * 5);            // 0→1 진입
+  const outA = Math.min(1, (1 - p) * 5);     // 1→0 탈출
+  const a = Math.min(inA, outA);
+
+  // 배경 어둡게
+  ctx.fillStyle = `rgba(0,0,0,${.55 * a})`;
+  ctx.fillRect(-10, -10, W + 20, H + 20);
+
+  // 대각 슬래시 / 운석 낙하 라인
+  ctx.save();
+  ctx.globalAlpha = a;
+  if (c.kind === 'slash') {
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 7;
+    ctx.shadowColor = c.color; ctx.shadowBlur = 24;
+    const shift = (1 - p) * 260;
+    for (let i = 0; i < 4; i++) {
+      ctx.beginPath();
+      ctx.moveTo(-100 + i * 240 - shift, -60);
+      ctx.lineTo(240 + i * 240 - shift, H + 60);
+      ctx.stroke();
+    }
+  } else { // meteor
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 5;
+    ctx.shadowColor = '#ff7043'; ctx.shadowBlur = 22;
+    for (let i = 0; i < 5; i++) {
+      const x = 90 + i * 250;
+      const y = -80 + p * (H + 200) + i * 34;
+      ctx.beginPath();
+      ctx.moveTo(x - 90, y - 130);
+      ctx.lineTo(x, y);
+      ctx.stroke();
+      ctx.fillStyle = '#ff7043';
+      ctx.beginPath(); ctx.arc(x, y, 9, 0, 7); ctx.fill();
+    }
+  }
+  ctx.restore();
+
+  // 캐릭터 아이콘 + 스킬명
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.textAlign = 'left';
+  const slideIn = (1 - Math.min(1, p * 4)) * -160;
+  ctx.font = '96px serif';
+  ctx.fillText(c.icon, 70 + slideIn, H / 2 + 34);
+  ctx.font = 'bold 54px sans-serif';
+  ctx.fillStyle = c.color;
+  ctx.strokeStyle = 'rgba(0,0,0,.9)';
+  ctx.lineWidth = 6;
+  ctx.strokeText(c.skill, 190 + slideIn, H / 2 + 18);
+  ctx.fillText(c.skill, 190 + slideIn, H / 2 + 18);
+  ctx.font = 'bold 22px sans-serif';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(c.who, 194 + slideIn, H / 2 + 56);
   ctx.restore();
 }
 
@@ -1067,9 +1261,11 @@ function buildUnitBar() {
     const b = document.createElement('button');
     b.className = 'unit-btn' + (u.main ? ' main' : '');
     b.dataset.id = u.id;
-    b.innerHTML = `<span class="ukey">${i + 1}</span><span class="icon">${u.icon}</span>` +
+    const key = i === 9 ? '0' : i < 9 ? String(i + 1) : '·';
+    b.innerHTML = `<span class="ukey">${key}</span><span class="icon">${u.icon}</span>` +
       `<span class="uname">${u.name}</span><span class="ucost">✦${u.cost}</span><div class="cool"></div>`;
-    b.title = u.desc;
+    if (ELEMENT_COLORS[u.element]) b.style.borderLeft = `3px solid ${ELEMENT_COLORS[u.element]}`;
+    b.title = `${u.name} — ${u.desc}\nHP ${u.hp} · 공격력 ${u.atk} · 사거리 ${u.range} · 소환쿨 ${u.cd}초`;
     b.addEventListener('click', () => buyUnit(u.id));
     unitBar.appendChild(b);
   });
@@ -1109,6 +1305,7 @@ function useSkill(id) {
 
   if (id === 'excalibur') {
     Sound.sfx('skill');
+    state.cutin = { t: 0, dur: 1.1, kind: 'slash', who: '아서왕', skill: '엑스칼리버', icon: '👑', color: '#ffd54f' };
     state.shake = .6;
     for (const e of state.units) {
       if (e.team === 'enemy' || e.team === 'boss') {
@@ -1122,6 +1319,7 @@ function useSkill(id) {
     floatText(W / 2, 120, '엑스칼리버!', '#ffd54f');
   } else if (id === 'meteorCall') {
     Sound.sfx('skill');
+    state.cutin = { t: 0, dur: 1.1, kind: 'meteor', who: '대마법사 멀린', skill: '대운석 낙하', icon: '🔮', color: '#b388ff' };
     const enemies = state.units.filter(e => e.team === 'enemy' || e.team === 'boss');
     const spots = enemies.length
       ? enemies.map(e => e.x)
@@ -1283,18 +1481,50 @@ $('storySkip').addEventListener('click', () => {
 /* ================================================================
    캠페인 맵 / 결과
    ================================================================ */
+/* 메인 타이틀 */
+function showTitle() {
+  mode = 'title';
+  state = null;
+  overlay.classList.remove('show');
+  storyOverlay.classList.remove('show');
+  $('bossBar').classList.add('hidden');
+  Sound.music('menu');
+  const total = CHAPTER.acts.length;
+  const done = CHAPTER.acts.filter(a => clearedSet.has(a.id)).length;
+  $('titleProgress').textContent = done
+    ? `진행률 ${Math.round(done / total * 100)}%  ·  클리어 ${done}/${total}액트`
+    : '진행률 0%  ·  새로운 모험을 시작하세요';
+  $('titleStart').textContent = unlocked > 1 ? '계속하기 ▶' : '모험 시작 ▶';
+  $('titleScreen').classList.add('show');
+}
+function startFromTitle() {
+  Sound.sfx('click');
+  $('titleScreen').classList.remove('show');
+  showMap();
+}
+
 function showMap() {
   mode = 'map';
   state = null;
   Sound.music('menu');
+  $('titleScreen').classList.remove('show');
   $('bossBar').classList.add('hidden');
   overlay.classList.add('show');
   storyOverlay.classList.remove('show');
   ovTitle.textContent = '냥코대전쟁';
   ovSub.textContent = `${CHAPTER.title} — ${CHAPTER.subtitle}`;
   ovDesc.textContent = '퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.';
+  const total = CHAPTER.acts.length;
+  const done = CHAPTER.acts.filter(a => clearedSet.has(a.id)).length;
+  $('mapFill').style.width = (done / total * 100) + '%';
+  $('mapCount').textContent = `${done}/${total}`;
   buildActList();
   ovBtns.innerHTML = '';
+  const toTitle = document.createElement('button');
+  toTitle.className = 'big alt';
+  toTitle.textContent = '타이틀로';
+  toTitle.addEventListener('click', () => { Sound.sfx('click'); showTitle(); });
+  ovBtns.appendChild(toTitle);
 }
 function buildActList() {
   actList.innerHTML = '';
@@ -1367,6 +1597,11 @@ function showResult(win) {
     next.addEventListener('click', () => startAct(currentAct + 1));
     ovBtns.appendChild(next);
   }
+  const toTitle = document.createElement('button');
+  toTitle.className = 'big alt';
+  toTitle.textContent = '타이틀로';
+  toTitle.addEventListener('click', () => { Sound.sfx('click'); showTitle(); });
+  ovBtns.appendChild(toTitle);
 }
 
 /* ================================================================
@@ -1389,14 +1624,20 @@ document.addEventListener('keydown', e => {
     if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); advanceStory(); }
     return;
   }
+  if (mode === 'title') {
+    if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); startFromTitle(); }
+    return;
+  }
+  if (mode === 'map') { if (e.key === 'Escape') showTitle(); return; }
   if (mode !== 'battle') return;
-  const n = Number(e.key);
+  const n = e.key === '0' ? 10 : Number(e.key);
   if (n >= 1 && n <= PLAYER_UNITS.length) buyUnit(PLAYER_UNITS[n - 1].id);
   else if (e.key === 'q' || e.key === 'Q') useSkill('excalibur');
   else if (e.key === 'w' || e.key === 'W') useSkill('meteorCall');
   else if (e.key === 'u' || e.key === 'U') upgradeIncome();
   else if (e.key === ' ') { e.preventDefault(); togglePause(); }
   else if (e.key === 'f' || e.key === 'F') toggleSpeed();
+  else if (e.key === 'Escape') showMap();
 });
 
 function togglePause() {
@@ -1417,13 +1658,31 @@ $('menuBtn').addEventListener('click', () => { if (mode === 'battle') showMap();
 function syncSoundBtns() {
   $('bgmBtn').classList.toggle('off', !Sound.bgmOn());
   $('sfxBtn').classList.toggle('off', !Sound.sfxOn());
+  $('titleBgm').classList.toggle('off', !Sound.bgmOn());
+  $('titleSfx').classList.toggle('off', !Sound.sfxOn());
+  $('titleBgm').textContent = Sound.bgmOn() ? '🎵 BGM 켜짐' : '🎵 BGM 꺼짐';
+  $('titleSfx').textContent = Sound.sfxOn() ? '🔊 효과음 켜짐' : '🔊 효과음 꺼짐';
 }
 $('bgmBtn').addEventListener('click', () => { Sound.toggleBGM(); syncSoundBtns(); Sound.sfx('click'); });
 $('sfxBtn').addEventListener('click', () => { const on = Sound.toggleSFX(); syncSoundBtns(); if (on) Sound.sfx('click'); });
+$('titleBgm').addEventListener('click', () => { Sound.toggleBGM(); syncSoundBtns(); Sound.sfx('click'); });
+$('titleSfx').addEventListener('click', () => { const on = Sound.toggleSFX(); syncSoundBtns(); if (on) Sound.sfx('click'); });
+$('titleStart').addEventListener('click', startFromTitle);
+$('titleHelpBtn').addEventListener('click', () => { Sound.sfx('click'); $('titleHelpBox').classList.toggle('open'); });
+$('titleReset').addEventListener('click', () => {
+  Sound.sfx('click');
+  if (!confirm('진행 상황(클리어한 액트)을 모두 삭제할까요?')) return;
+  localStorage.removeItem('pw_unlocked');
+  localStorage.removeItem('pw_cleared');
+  unlocked = 1; clearedSet = new Set();
+  saveProgress();
+  Sound.sfx('whoosh');
+  showTitle();
+});
 syncSoundBtns();
 
 /* ================= 시작 ================= */
 buildUnitBar();
 buildSkillBar();
-showMap();
+showTitle();
 render();
