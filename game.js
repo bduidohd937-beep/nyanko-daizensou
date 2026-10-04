@@ -41,13 +41,69 @@ function tryDraw(img, x, y, size) {
   return false;
 }
 
-/* ================= 진행 상황 ================= */
-let unlocked = Number(localStorage.getItem('pw_unlocked') || 1);
-let clearedSet = new Set(JSON.parse(localStorage.getItem('pw_cleared') || '[]'));
-function saveProgress() {
-  localStorage.setItem('pw_unlocked', String(unlocked));
-  localStorage.setItem('pw_cleared', JSON.stringify([...clearedSet]));
+/* ================= 메타 진행 (재화·소유·레벨·편성·챕터) ================= */
+const META_KEY = 'nyanko_meta';
+const LINEUP_MAX = 10;              // 챕터별 편성 최대 인원 (단축키 1~9·0)
+const STARTER_UNITS = ['guard', 'archer', 'paladin', 'charger', 'shadow', 'dragonian',
+                       'merlin', 'frostblade', 'priestess', 'tempest', 'colossus', 'arthur'];
+
+function defaultLineup() {
+  const pref = ['guard', 'archer', 'paladin', 'charger', 'merlin', 'priestess',
+                'shadow', 'frostblade', 'tempest', 'arthur'];
+  return pref.filter(id => STARTER_UNITS.includes(id)).slice(0, LINEUP_MAX);
 }
+function loadMeta() {
+  try {
+    const raw = localStorage.getItem(META_KEY);
+    if (raw) {
+      const m = JSON.parse(raw);
+      if (m && m.v === 1) {
+        m.lineups = m.lineups || [];
+        m.unlocked = m.unlocked || [1, 1, 1];
+        while (m.lineups.length < CHAPTERS.length) m.lineups.push(defaultLineup());
+        while (m.unlocked.length < CHAPTERS.length) m.unlocked.push(1);
+        return m;
+      }
+    }
+  } catch (e) { /* 손상된 저장은 무시 */ }
+  // 과거 저장(pw_*) 마이그레이션
+  const legacyUnlocked = Number(localStorage.getItem('pw_unlocked') || 1);
+  const legacyCleared = JSON.parse(localStorage.getItem('pw_cleared') || '[]');
+  const m = {
+    v: 1, food: 1500, xp: 300,   // 신규 시작 재화: 첫 10연차 + 초기 강화
+    owned: {}, levels: {},
+    lineups: [],
+    unlocked: [legacyUnlocked, 1, 1],
+    cleared: legacyCleared,
+  };
+  STARTER_UNITS.forEach(id => { m.owned[id] = true; m.levels[id] = { lv: 1, star: 0 }; });
+  while (m.lineups.length < CHAPTERS.length) m.lineups.push(defaultLineup());
+  return m;
+}
+let meta = loadMeta();
+let clearedSet = new Set(meta.cleared || []);
+let curChapter = 0;                 // 현재 선택된 챕터 (0~2)
+
+function saveProgress() {
+  meta.cleared = [...clearedSet];
+  try { localStorage.setItem(META_KEY, JSON.stringify(meta)); } catch (e) {}
+  // 레거시 키 미러 (하위 호환)
+  localStorage.setItem('pw_unlocked', String(meta.unlocked[0] || 1));
+  localStorage.setItem('pw_cleared', JSON.stringify(meta.cleared));
+}
+const unitLv = id => meta.levels[id] || { lv: 1, star: 0 };
+const playerScale = id => { const l = unitLv(id); return LEVEL.statMult(l.lv, l.star); };
+function lineupFor(ch) {
+  const raw = meta.lineups[ch] || defaultLineup();
+  const list = raw.filter(id => meta.owned[id]);
+  if (!list.length) return defaultLineup().filter(id => meta.owned[id]).slice(0, LINEUP_MAX);
+  return list.slice(0, LINEUP_MAX);
+}
+function chapterOpen(i) {
+  if (i <= 0) return true;
+  return CHAPTERS[i - 1].acts.every(a => clearedSet.has(a.id));
+}
+const CH = () => CHAPTERS[curChapter];
 
 /* ================= 화자 ================= */
 const SPEAKERS = { arthur: '아서왕', mage: '왕국 마법사', soldier: '왕국 병사', villager: '퓨어월드 주민' };
@@ -57,13 +113,13 @@ let state = null;          // 전투 상태
 let currentAct = 0;
 let paused = false, speed = 1;
 let rafId = null, lastTs = 0;
-let mode = 'map';          // title | map | story | battle
+let mode = 'map';          // title | map | story | battle | gacha | team
 let storyQueue = [], storyDone = null, typeTimer = null;
 
 /* ================= 전투 상태 생성 ================= */
 let uidSeq = 1;
 function newBattle(actIdx) {
-  const act = CHAPTER.acts[actIdx];
+  const act = CH().acts[actIdx];
   const b = act.battle;
   return {
     act, actIdx, t: 0,
@@ -117,7 +173,25 @@ function spawnUnit(team, def, opts = {}) {
   if (opts.boss) { state.boss = u; state.bossDef = def; state.bossPhase = 0; }
   return u;
 }
-function spawnPlayer(id) { const d = PLAYER_UNITS.find(u => u.id === id); if (d) return spawnUnit('player', d); }
+function spawnPlayer(id) {
+  const d = PLAYER_UNITS.find(u => u.id === id);
+  if (d) return spawnUnit('player', d, { scale: playerScale(id) });
+}
+
+/* ================= 클리어 보상 ================= */
+let lastRewards = null;
+function actRewardXp(act) {
+  const bossish = act.kind.includes('BOSS');
+  return act.noBattle ? 60 : bossish ? 420 : 160;
+}
+function grantRewards(act, first) {
+  const baseXp = actRewardXp(act);
+  const food = first ? (act.kind.includes('BOSS') ? 300 : act.noBattle ? 200 : 120) : 30;
+  const xp = first ? baseXp : Math.round(baseXp * 0.4);
+  meta.food += food;
+  meta.xp += xp;
+  lastRewards = { food, xp, first };
+}
 function spawnEnemy(id, opts) { const d = ENEMY_UNITS.find(u => u.id === id); if (d) return spawnUnit('enemy', d, opts); }
 function spawnVillager() {
   const u = spawnUnit('civ', VILLAGER_DEF, { x: ENEMY_BASE_X - 90 });
@@ -159,6 +233,19 @@ function applyDamage(target, amount, opts = {}) {
   target.hp -= amount;
   target.hitFlash = .12;
   target.hurtT = 1;
+  if (target.hp <= 0) {
+    // 불사조 부활 (전투 중 1회)
+    if (target.team === 'player' && target.def.ability && target.def.ability.rebirth && !target.reborn) {
+      target.hp = target.maxHp * 0.5;
+      target.reborn = true;
+      target.burn = null; target.stun = 0;
+      burst(target.x, target.y, '#ff9100', 40);
+      state.fx.push({ x: target.x, y: target.y - 30, text: '부활!', color: '#ffab40', t: 1.4 });
+      floatText(target.x, target.y - target.def.size - 20, 'REBIRTH', '#ffab40');
+      Sound.sfx('summonBig');
+      return;
+    }
+  }
   if (opts.burn) target.burn = { dps: opts.burn.dps, t: opts.burn.dur };
   if (opts.stun) target.stun = Math.max(target.stun, opts.stun);
   if (opts.slow) {
@@ -371,7 +458,24 @@ function effectiveAtkInt(u) {
 }
 function effectiveAtk(u) {
   const m = u.isBoss ? u.phaseMods : null;
-  return u.atk * (m && m.atk ? m.atk : 1);
+  let a = u.atk * (m && m.atk ? m.atk : 1);
+  // 음유시인 워크리: 주변 아군 공격력 증가 (중첩 X, 가장 강한 버프 적용)
+  if (u.team === 'player' && !u.isBoss) {
+    for (const a2 of state.units) {
+      if (a2.team === 'player' && a2.hp > 0 && a2 !== u &&
+          a2.def.ability && a2.def.ability.type === 'warcry' &&
+          Math.abs(a2.x - u.x) <= a2.def.ability.radius) {
+        a *= (1 + a2.def.ability.mult);
+        break;
+      }
+    }
+    // 광전사: 체력 낮을 때 공격력 증가
+    if (u.def.ability && u.def.ability.type === 'lastStand' &&
+        u.hp / u.maxHp <= u.def.ability.hpPct) {
+      a *= u.def.ability.mult;
+    }
+  }
+  return a;
 }
 function effectiveRange(u) {
   const m = u.isBoss ? u.phaseMods : null;
@@ -463,6 +567,27 @@ function updateUnit(u, dt) {
   u.atkCd -= dt;
   const dir = u.team === 'player' ? 1 : -1;
 
+  // 공허 폭발 (공허의 인도자): 주기적 광역 피해 + 둔화
+  if (u.team === 'player' && u.def.ability && u.def.ability.type === 'voidNova') {
+    if (u.novaT === undefined) u.novaT = u.def.ability.cd;
+    u.novaT -= dt;
+    if (u.novaT <= 0 && u.stun <= 0) {
+      u.novaT = u.def.ability.cd;
+      const ab = u.def.ability;
+      Sound.sfx('phase');
+      state.shake = .3;
+      burst(u.x, u.y, '#b388ff', 30);
+      state.fx.push({ x: u.x, y: u.y - 40, text: 'VOID', color: '#b388ff', t: 1, big: false });
+      for (const e of state.units) {
+        if (isEnemyOf(u, e) && e.hp > 0 && Math.abs(e.x - u.x) <= ab.radius) {
+          applyDamage(e, effectiveAtk(u) * ab.dmgPct, {
+            slow: { mul: ab.slow, dur: ab.dur }, color: '#b388ff',
+          });
+        }
+      }
+    }
+  }
+
   // 대상 탐색 (가장 가까운 적)
   let target = null, best = Infinity, targetWall = null;
   for (const e of state.units) {
@@ -512,20 +637,32 @@ function updateUnit(u, dt) {
       if (state.playerHp <= 0) { state.playerHp = 0; endGame(false); }
     }
   } else if (!target && !targetWall) {
+    // 뒤쪽 인식 범위 내 적이 있으면 추적 (라인 교착 방지)
+    let moveDir = dir;
+    const aware = Math.max(effectiveRange(u) + 160, 420);
+    let chase = null, chaseD = Infinity;
+    for (const e of state.units) {
+      if (e.hp <= 0 || !isEnemyOf(u, e)) continue;
+      const dx = e.x - u.x;
+      if (dx * dir >= 0) continue;          // 정면은 기존 진격 로직이 처리
+      const d = Math.abs(dx);
+      if (d <= aware && d < chaseD) { chaseD = d; chase = e; }
+    }
+    if (chase) moveDir = Math.sign(chase.x - u.x);
     // 진격 (본부에 닿으면 정지)
-    let nx = u.x + dir * effectiveSpeed(u) * dt;
+    let nx = u.x + moveDir * effectiveSpeed(u) * dt;
     const limit = u.team === 'player'
       ? Math.min(ENEMY_BASE_X - 50, WORLD_RIGHT - u.def.size)
       : Math.max(PLAYER_BASE_X + 50, WORLD_LEFT + u.def.size);
     if (u.team === 'player') nx = Math.min(nx, limit);
     else nx = Math.max(nx, limit);
-    // 아군은 바위벽에 막힘
-    if (u.team === 'player') {
+    // 아군은 정방향 이동 시 바위벽에 막힘 (후방 추적은 통과)
+    if (u.team === 'player' && moveDir === dir) {
       for (const w of state.walls) {
         if (w.hp > 0 && nx > w.x - u.def.size * .5 - 4) { nx = Math.min(nx, w.x - u.def.size * .5 - 4); break; }
       }
     }
-    u.x = nx;
+    u.x = Math.max(WORLD_LEFT, Math.min(WORLD_RIGHT, nx));
     u.moving = true;
   }
 }
@@ -749,8 +886,11 @@ function endGame(win) {
   setTimeout(() => {
     if (!state || state.over !== (win ? 'win' : 'lose')) return;  // 중간에 상태가 바뀌면 취소
     if (win) {
+      const first = !clearedSet.has(state.act.id);
       clearedSet.add(state.act.id);
-      unlocked = Math.max(unlocked, Math.min(CHAPTER.acts.length, state.actIdx + 2));
+      meta.unlocked[curChapter] = Math.max(meta.unlocked[curChapter] || 1,
+        Math.min(CH().acts.length, state.actIdx + 2));
+      grantRewards(state.act, first);
       saveProgress();
       if (state.act.outro && state.act.outro.length) {
         playStory(state.act.outro, () => showResult(true));
@@ -1254,18 +1394,26 @@ function drawCutin() {
    UI : 유닛 바 / 스킬 바 / HP
    ================================================================ */
 const unitBar = $('unitBar'), skillBar = $('skillBar');
+let curLineup = [];   // 현재 전투에 투입 가능한 유닛 (챕터 편성)
 
 function buildUnitBar() {
   unitBar.innerHTML = '';
-  PLAYER_UNITS.forEach((u, i) => {
+  curLineup = lineupFor(curChapter);
+  curLineup.forEach((id, i) => {
+    const u = PLAYER_UNITS.find(p => p.id === id);
+    if (!u) return;
+    const lv = unitLv(id);
+    const mult = LEVEL.statMult(lv.lv, lv.star);
     const b = document.createElement('button');
     b.className = 'unit-btn' + (u.main ? ' main' : '');
     b.dataset.id = u.id;
     const key = i === 9 ? '0' : i < 9 ? String(i + 1) : '·';
     b.innerHTML = `<span class="ukey">${key}</span><span class="icon">${u.icon}</span>` +
-      `<span class="uname">${u.name}</span><span class="ucost">✦${u.cost}</span><div class="cool"></div>`;
+      `<span class="uname">${u.name}</span>` +
+      `<span class="ucost">✦${u.cost} · Lv${lv.lv}${lv.star ? '★' + lv.star : ''}</span><div class="cool"></div>`;
     if (ELEMENT_COLORS[u.element]) b.style.borderLeft = `3px solid ${ELEMENT_COLORS[u.element]}`;
-    b.title = `${u.name} — ${u.desc}\nHP ${u.hp} · 공격력 ${u.atk} · 사거리 ${u.range} · 소환쿨 ${u.cd}초`;
+    b.title = `${u.name} (Lv${lv.lv}${lv.star ? ' ★' + lv.star : ''}) — ${u.desc}\n` +
+      `HP ${Math.round(u.hp * mult)} · 공격력 ${Math.round(u.atk * mult)} · 사거리 ${u.range} · 소환쿨 ${u.cd}초`;
     b.addEventListener('click', () => buyUnit(u.id));
     unitBar.appendChild(b);
   });
@@ -1489,12 +1637,12 @@ function showTitle() {
   storyOverlay.classList.remove('show');
   $('bossBar').classList.add('hidden');
   Sound.music('menu');
-  const total = CHAPTER.acts.length;
-  const done = CHAPTER.acts.filter(a => clearedSet.has(a.id)).length;
+  const total = CHAPTERS.reduce((s, c) => s + c.acts.length, 0);
+  const done = CHAPTERS.reduce((s, c) => s + c.acts.filter(a => clearedSet.has(a.id)).length, 0);
   $('titleProgress').textContent = done
-    ? `진행률 ${Math.round(done / total * 100)}%  ·  클리어 ${done}/${total}액트`
-    : '진행률 0%  ·  새로운 모험을 시작하세요';
-  $('titleStart').textContent = unlocked > 1 ? '계속하기 ▶' : '모험 시작 ▶';
+    ? `진행률 ${Math.round(done / total * 100)}%  ·  클리어 ${done}/${total}액트  ·  🍗${meta.food}  ✨${meta.xp}`
+    : `진행률 0%  ·  새로운 모험을 시작하세요  ·  🍗${meta.food}  ✨${meta.xp}`;
+  $('titleStart').textContent = meta.unlocked[0] > 1 ? '계속하기 ▶' : '모험 시작 ▶';
   $('titleScreen').classList.add('show');
 }
 function startFromTitle() {
@@ -1512,27 +1660,54 @@ function showMap() {
   overlay.classList.add('show');
   storyOverlay.classList.remove('show');
   ovTitle.textContent = '냥코대전쟁';
-  ovSub.textContent = `${CHAPTER.title} — ${CHAPTER.subtitle}`;
-  ovDesc.textContent = '퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.';
-  const total = CHAPTER.acts.length;
-  const done = CHAPTER.acts.filter(a => clearedSet.has(a.id)).length;
+  const ch = CH();
+  ovSub.textContent = `${ch.title} — ${ch.subtitle}`;
+  ovDesc.textContent = ch.desc || '';
+  const total = ch.acts.length;
+  const done = ch.acts.filter(a => clearedSet.has(a.id)).length;
   $('mapFill').style.width = (done / total * 100) + '%';
   $('mapCount').textContent = `${done}/${total}`;
+  buildChapterTabs();
   buildActList();
+  syncMetaHud();
   ovBtns.innerHTML = '';
+  const gachaBtn = document.createElement('button');
+  gachaBtn.className = 'big';
+  gachaBtn.textContent = '🎰 가챠 뽑기';
+  gachaBtn.addEventListener('click', () => { Sound.sfx('click'); openGacha(); });
+  ovBtns.appendChild(gachaBtn);
+  const teamBtn = document.createElement('button');
+  teamBtn.className = 'big';
+  teamBtn.textContent = '캐릭터 편성';
+  teamBtn.addEventListener('click', () => { Sound.sfx('click'); openTeam(); });
+  ovBtns.appendChild(teamBtn);
   const toTitle = document.createElement('button');
   toTitle.className = 'big alt';
   toTitle.textContent = '타이틀로';
   toTitle.addEventListener('click', () => { Sound.sfx('click'); showTitle(); });
   ovBtns.appendChild(toTitle);
 }
+function buildChapterTabs() {
+  const box = $('chapterTabs');
+  box.innerHTML = '';
+  CHAPTERS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'stage-chip' + (i === curChapter ? ' active' : '') + (chapterOpen(i) ? '' : ' closed');
+    const d = c.acts.filter(a => clearedSet.has(a.id)).length;
+    b.innerHTML = chapterOpen(i) ? `${c.title} <small>${d}/${c.acts.length}</small>` : `${c.title} 🔒`;
+    b.disabled = !chapterOpen(i);
+    b.addEventListener('click', () => { Sound.sfx('click'); curChapter = i; showMap(); });
+    box.appendChild(b);
+  });
+}
 function buildActList() {
   actList.innerHTML = '';
-  CHAPTER.acts.forEach((a, i) => {
+  const un = meta.unlocked[curChapter] || 1;
+  CH().acts.forEach((a, i) => {
     const row = document.createElement('button');
     const isBoss = a.kind.includes('BOSS');
     row.className = 'act-row' + (isBoss ? ' boss' : '') + (clearedSet.has(a.id) ? ' cleared' : '');
-    const locked = i + 1 > unlocked;
+    const locked = i + 1 > un;
     row.disabled = locked;
     row.innerHTML = `<span class="kind">${a.kind}</span><span class="title">${a.title}</span>` +
       `<span class="mark">${locked ? '🔒' : clearedSet.has(a.id) ? '✅' : '▶'}</span>`;
@@ -1543,7 +1718,7 @@ function buildActList() {
 
 function startAct(idx) {
   currentAct = idx;
-  const act = CHAPTER.acts[idx];
+  const act = CH().acts[idx];
   overlay.classList.remove('show');
   state = null;
   $('bossBar').classList.add('hidden');
@@ -1551,14 +1726,17 @@ function startAct(idx) {
   const beginBattle = () => {
     if (act.noBattle) {
       // 엔딩 액트: 스토리 종료 후 맵
+      const first = !clearedSet.has(act.id);
       clearedSet.add(act.id);
-      unlocked = Math.max(unlocked, Math.min(CHAPTER.acts.length, idx + 2));
+      meta.unlocked[curChapter] = Math.max(meta.unlocked[curChapter] || 1, Math.min(CH().acts.length, idx + 2));
+      grantRewards(act, first);
       saveProgress();
       showMap();
       return;
     }
     state = newBattle(idx);
     mode = 'battle';
+    buildUnitBar();   // 챕터 편성 반영
     paused = false; speed = 1;
     Sound.music('battle');
     $('pauseBtn').textContent = '일시정지';
@@ -1575,14 +1753,13 @@ function showResult(win) {
   mode = 'map';
   Sound.music('menu');
   overlay.classList.add('show');
-  const act = CHAPTER.acts[currentAct];
-  const isFinal = win && currentAct >= CHAPTER.acts.length - 1;
-  ovTitle.textContent = isFinal ? 'CHAPTER 1 CLEAR' : win ? '임무 완료!' : '임무 실패...';
+  const act = CH().acts[currentAct];
+  const isFinal = win && currentAct >= CH().acts.length - 1;
+  ovTitle.textContent = isFinal ? `${CH().title} CLEAR` : win ? '임무 완료!' : '임무 실패...';
   ovSub.textContent = `${act.kind} — ${act.title}`;
   ovDesc.textContent = win
-    ? (isFinal ? '아르카논 격파. 아서왕과 일부 왕국군은 균열 안으로 사라졌다. 퓨어월드의 균열은 아직 끝나지 않았다.'
-               : '다음 액트가 열렸습니다. 캠페인 맵에서 계속 진행하세요.')
-    : '전선이 무너졌다. 유닛 조합과 워커 강화 타이밍을 다시 생각해보세요.';
+    ? (lastRewards ? `획득: 🍗${lastRewards.food} 냥코푸드 · ✨${lastRewards.xp} 경험치` + (lastRewards.first ? '  (첫 클리어 보너스!)' : '') : '')
+    : '전선이 무너졌다. 유닛 조합·레벨업·편성을 다시 검토해보세요.';
   buildActList();
   ovBtns.innerHTML = '';
   const retry = document.createElement('button');
@@ -1590,18 +1767,227 @@ function showResult(win) {
   retry.textContent = '다시 도전';
   retry.addEventListener('click', () => startAct(currentAct));
   ovBtns.appendChild(retry);
-  if (win && currentAct + 1 < CHAPTER.acts.length) {
+  if (win && currentAct + 1 < CH().acts.length) {
     const next = document.createElement('button');
     next.className = 'big';
     next.textContent = '다음 액트 ▶';
     next.addEventListener('click', () => startAct(currentAct + 1));
     ovBtns.appendChild(next);
   }
+  const gachaBtn = document.createElement('button');
+  gachaBtn.className = 'big alt';
+  gachaBtn.textContent = '가챠';
+  gachaBtn.addEventListener('click', () => { Sound.sfx('click'); openGacha(); });
+  ovBtns.appendChild(gachaBtn);
   const toTitle = document.createElement('button');
   toTitle.className = 'big alt';
   toTitle.textContent = '타이틀로';
   toTitle.addEventListener('click', () => { Sound.sfx('click'); showTitle(); });
   ovBtns.appendChild(toTitle);
+}
+
+/* ================================================================
+   가챠 (뽑기) / 캐릭터 편성 / 레벨업
+   ================================================================ */
+const gachaScreen = $('gachaScreen'), teamScreen = $('teamScreen');
+
+function rollRarity(minR) {
+  const r = Math.random();
+  const w = GACHA.rates;
+  if (minR === 'SR') {
+    // SR 이상 보장: SR 80% / SSR 20%
+    return Math.random() < 0.2 ? 'SSR' : 'SR';
+  }
+  if (r < w.SSR) return 'SSR';
+  if (r < w.SSR + w.SR) return 'SR';
+  return 'R';
+}
+function pickByRarity(rar) {
+  const cands = GACHA.pool.filter(p => p.rar === rar);
+  return cands[Math.floor(Math.random() * cands.length)];
+}
+function pullOne(minR) {
+  const rar = rollRarity(minR);
+  const pick = pickByRarity(rar);
+  const def = PLAYER_UNITS.find(u => u.id === pick.id);
+  let isNew = false, starUp = false;
+  if (!meta.owned[pick.id]) {
+    meta.owned[pick.id] = true;
+    meta.levels[pick.id] = { lv: 1, star: 0 };
+    isNew = true;
+  } else {
+    const lv = meta.levels[pick.id];
+    if (lv.star < 5) { lv.star++; starUp = true; }
+    else meta.xp += 200;   // 최종성 중복 → XP 환급
+  }
+  return { id: pick.id, rar, def, isNew, starUp };
+}
+function doPull(n) {
+  const cost = n === 10 ? GACHA.costMulti : GACHA.costSingle;
+  if (meta.food < cost) { Sound.sfx('error'); flashFood(); return; }
+  meta.food -= cost;
+  const results = [];
+  for (let i = 0; i < n; i++) results.push(pullOne(n === 10 && i === 9 ? 'SR' : null));
+  saveProgress();
+  Sound.sfx(n === 10 ? 'summonBig' : 'summon');
+  renderGachaResults(results);
+  syncMetaHud();
+}
+function flashFood() {
+  const el = $('gachaFood');
+  if (!el) return;
+  el.style.color = '#ff5252';
+  setTimeout(() => (el.style.color = ''), 350);
+}
+function syncMetaHud() {
+  $('gachaFood').textContent = meta.food;
+  $('gachaXp').textContent = meta.xp;
+  $('teamFood').textContent = meta.food;
+  $('teamXp').textContent = meta.xp;
+  $('mapFood').textContent = meta.food;
+  $('mapXp').textContent = meta.xp;
+}
+function openGacha() {
+  mode = 'gacha';
+  gachaScreen.classList.add('show');
+  $('gachaResults').innerHTML = '<p class="hint">뽑기 결과가 여기에 표시됩니다</p>';
+  syncMetaHud();
+}
+function closeGacha() {
+  Sound.sfx('click');
+  gachaScreen.classList.remove('show');
+  showMap();
+}
+function renderGachaResults(results) {
+  const box = $('gachaResults');
+  box.innerHTML = '';
+  results.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = 'gacha-card' + (r.isNew ? ' new' : '') + (r.starUp ? ' dupe' : '');
+    card.style.animationDelay = (i * 0.09) + 's';
+    card.style.setProperty('--rar', RARITY_COLORS[r.rar]);
+    card.innerHTML =
+      `<div class="gc-rar">${r.rar}</div>` +
+      `<div class="gc-icon">${r.def ? r.def.icon : '❔'}</div>` +
+      `<div class="gc-name">${r.def ? r.def.name : '?'}</div>` +
+      `<div class="gc-tag">${r.isNew ? 'NEW!' : r.starUp ? '★ 돌파!' : 'XP+200'}</div>`;
+    box.appendChild(card);
+  });
+}
+
+/* ---------- 캐릭터 편성 / 레벨업 ---------- */
+let teamChapter = 0;
+function openTeam() {
+  mode = 'team';
+  teamChapter = curChapter;
+  teamScreen.classList.add('show');
+  syncMetaHud();
+  renderTeam();
+}
+function closeTeam() {
+  Sound.sfx('click');
+  teamScreen.classList.remove('show');
+  showMap();
+}
+function renderTeam() {
+  const tabs = $('teamTabs');
+  tabs.innerHTML = '';
+  CHAPTERS.forEach((c, i) => {
+    const b = document.createElement('button');
+    b.className = 'stage-chip' + (i === teamChapter ? ' active' : '') + (chapterOpen(i) ? '' : ' closed');
+    b.textContent = chapterOpen(i) ? c.title : c.title + ' 🔒';
+    b.disabled = !chapterOpen(i);
+    b.addEventListener('click', () => { Sound.sfx('click'); teamChapter = i; renderTeam(); });
+    tabs.appendChild(b);
+  });
+  const lineup = (meta.lineups[teamChapter] || defaultLineup()).filter(id => meta.owned[id]);
+  $('teamCount').textContent = `${lineup.length}/${LINEUP_MAX}`;
+
+  // 편성 슬롯
+  const slotBox = $('teamSlots');
+  slotBox.innerHTML = '';
+  for (let i = 0; i < LINEUP_MAX; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'team-slot';
+    const id = lineup[i];
+    if (id) {
+      const u = PLAYER_UNITS.find(p => p.id === id);
+      const lv = unitLv(id);
+      slot.classList.add('filled');
+      if (ELEMENT_COLORS[u.element]) slot.style.borderLeft = `3px solid ${ELEMENT_COLORS[u.element]}`;
+      slot.innerHTML = `<span class="ts-key">${i === 9 ? 0 : i + 1}</span>` +
+        `<span class="ts-icon">${u.icon}</span><span class="ts-name">${u.name}</span>` +
+        `<span class="ts-lv">Lv${lv.lv}${lv.star ? ' ' + '★'.repeat(lv.star) : ''}</span>`;
+      slot.title = '클릭해서 편성에서 제외';
+      slot.addEventListener('click', () => {
+        Sound.sfx('click');
+        meta.lineups[teamChapter] = lineup.filter(x => x !== id);
+        saveProgress(); renderTeam();
+      });
+    } else {
+      slot.innerHTML = '<span class="ts-empty">＋</span>';
+    }
+    slotBox.appendChild(slot);
+  }
+
+  // 로스터 (보유 유닛 전부, 강화 버튼 포함)
+  const grid = $('teamRoster');
+  grid.innerHTML = '';
+  const ownedIds = PLAYER_UNITS.filter(u => meta.owned[u.id]);
+  // 편성 우선 정렬: 먼저 편성된 순
+  ownedIds.sort((a, b) => {
+    const ia = lineup.indexOf(a.id), ib = lineup.indexOf(b.id);
+    if (ia !== ib) return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    return a.cost - b.cost;
+  });
+  if (!ownedIds.length) grid.innerHTML = '<p class="hint">보유한 캐릭터가 없습니다. 가챠에서 영입하세요!</p>';
+  ownedIds.forEach(u => {
+    const lv = unitLv(u.id);
+    const inTeam = lineup.includes(u.id);
+    const mult = LEVEL.statMult(lv.lv, lv.star);
+    const cost = LEVEL.xpCost(lv.lv);
+    const card = document.createElement('div');
+    card.className = 'roster-card' + (inTeam ? ' in-team' : '');
+    card.style.setProperty('--rar', ELEMENT_COLORS[u.element] || '#5a4a85');
+    const maxed = lv.lv >= LEVEL.max;
+    card.innerHTML =
+      `<div class="rc-top">` +
+        `<span class="rc-icon">${u.icon}</span>` +
+        `<span class="rc-lv">Lv${lv.lv}${lv.star ? ' ' + '★'.repeat(lv.star) : ''}</span>` +
+        `<span class="rc-rar">${u.main ? '⭐' : ''}</span>` +
+      `</div>` +
+      `<div class="rc-name">${u.name}</div>` +
+      `<div class="rc-stats">HP ${Math.round(u.hp * mult)} · ATK ${Math.round(u.atk * mult)}</div>` +
+      `<div class="rc-desc">${u.desc}</div>` +
+      `<div class="rc-actions">` +
+        `<button class="rc-btn team" ${inTeam ? 'disabled' : ''}>${inTeam ? '편성중' : '투입'}</button>` +
+        `<button class="rc-btn level" ${maxed || meta.xp < cost ? 'disabled' : ''}>` +
+          `${maxed ? 'MAX' : '강화 ✨' + cost}` +
+        `</button>` +
+      `</div>`;
+    const teamBtn = card.querySelector('.rc-btn.team');
+    teamBtn.addEventListener('click', () => {
+      if (inTeam) {
+        meta.lineups[teamChapter] = lineup.filter(x => x !== u.id);
+      } else {
+        if (lineup.length >= LINEUP_MAX) { Sound.sfx('error'); return; }
+        lineup.push(u.id);
+        meta.lineups[teamChapter] = lineup;
+      }
+      Sound.sfx('buy'); saveProgress(); renderTeam();
+    });
+    const lvBtn = card.querySelector('.rc-btn.level');
+    lvBtn.addEventListener('click', () => {
+      const l = meta.levels[u.id];
+      if (l.lv >= LEVEL.max) return;
+      const c = LEVEL.xpCost(l.lv);
+      if (meta.xp < c) { Sound.sfx('error'); return; }
+      meta.xp -= c; l.lv++;
+      Sound.sfx('upgrade'); saveProgress(); syncMetaHud(); renderTeam();
+    });
+    grid.appendChild(card);
+  });
+  syncMetaHud();
 }
 
 /* ================================================================
@@ -1629,9 +2015,11 @@ document.addEventListener('keydown', e => {
     return;
   }
   if (mode === 'map') { if (e.key === 'Escape') showTitle(); return; }
+  if (mode === 'gacha') { if (e.key === 'Escape') closeGacha(); return; }
+  if (mode === 'team') { if (e.key === 'Escape') closeTeam(); return; }
   if (mode !== 'battle') return;
   const n = e.key === '0' ? 10 : Number(e.key);
-  if (n >= 1 && n <= PLAYER_UNITS.length) buyUnit(PLAYER_UNITS[n - 1].id);
+  if (n >= 1 && n <= curLineup.length) buyUnit(curLineup[n - 1]);
   else if (e.key === 'q' || e.key === 'Q') useSkill('excalibur');
   else if (e.key === 'w' || e.key === 'W') useSkill('meteorCall');
   else if (e.key === 'u' || e.key === 'U') upgradeIncome();
@@ -1674,12 +2062,35 @@ $('titleReset').addEventListener('click', () => {
   if (!confirm('진행 상황(클리어한 액트)을 모두 삭제할까요?')) return;
   localStorage.removeItem('pw_unlocked');
   localStorage.removeItem('pw_cleared');
-  unlocked = 1; clearedSet = new Set();
+  localStorage.removeItem(META_KEY);
+  meta = loadMeta();
+  clearedSet = new Set();
+  curChapter = 0;
   saveProgress();
   Sound.sfx('whoosh');
   showTitle();
 });
 syncSoundBtns();
+
+// 가챠 / 편성 화면 버튼
+$('pull1').addEventListener('click', () => doPull(1));
+$('pull10').addEventListener('click', () => doPull(10));
+$('gachaClose').addEventListener('click', closeGacha);
+$('teamClose').addEventListener('click', closeTeam);
+// 가챠 풀 미리보기
+(function buildGachaPool() {
+  const box = $('gachaPool');
+  GACHA.pool.forEach(p => {
+    const u = PLAYER_UNITS.find(x => x.id === p.id);
+    if (!u) return;
+    const el = document.createElement('span');
+    el.className = 'pool-chip' + (meta.owned[p.id] ? ' owned' : '');
+    el.style.setProperty('--rar', RARITY_COLORS[p.rar]);
+    el.innerHTML = `${u.icon} ${u.name} <b>${p.rar}</b>`;
+    el.title = u.desc;
+    box.appendChild(el);
+  });
+})();
 
 /* ================= 시작 ================= */
 buildUnitBar();

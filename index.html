@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>냥코대전쟁 — CHAPTER 1 퓨어월드</title>
+<title>냥코대전쟁 — 가챠·편성·3챕터</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -80,7 +80,7 @@
     <div class="title-inner">
       <div class="title-cat">🐱</div>
       <h1 class="title-logo"><span>냥코</span>대전쟁</h1>
-      <div class="title-sub">NYANKO GREAT WAR — CHAPTER 1 · 퓨어월드</div>
+      <div class="title-sub">NYANKO GREAT WAR — 가챠 · 캐릭터 편성 · 레벨업</div>
       <div id="titleProgress" class="title-progress">진행률 0%</div>
       <div class="title-btns">
         <button id="titleStart" class="big">모험 시작 ▶</button>
@@ -98,9 +98,48 @@
           <div><b>F</b><span>배속 ×1/×2</span></div>
           <div><b>ESC</b><span>캠페인 맵</span></div>
         </div>
-        <p class="help-tip">성녀·서리검사·폭풍검사 등 12명의 영웅으로 원소 세력을 막아내세요.</p>
+        <p class="help-tip">가챠로 냥코 영웅을 영입하고, 챕터별 편성·레벨업으로 20종의 영웅을 육성하세요. 총 3개 챕터 26개 액트!</p>
       </div>
       <div class="title-foot">진행 상황은 브라우저에 자동 저장됩니다</div>
+    </div>
+  </div>
+
+  <!-- 가챠 (뽑기) -->
+  <div id="gachaScreen">
+    <div class="panel wide">
+      <h1>가챠 — 냥코 뽑기</h1>
+      <p class="subtitle">R 70% · SR 24% · SSR 6% — 10연차 마지막은 SR 이상 확정</p>
+      <div id="metaHud">
+        <span class="mh food">🍗 냥코푸드 <b id="gachaFood">0</b></span>
+        <span class="mh xp">✨ 경험치 <b id="gachaXp">0</b></span>
+      </div>
+      <div id="gachaPool"></div>
+      <div id="gachaResults"></div>
+      <div id="gachaBtns">
+        <button id="pull1" class="big">1회 뽑기 🍗150</button>
+        <button id="pull10" class="big">10연차 🍗1500</button>
+        <button id="gachaClose" class="big alt">닫기</button>
+      </div>
+      <p class="hint">중복 획득 시 ★ 돌파(+5% 스탯, 최대 5성) · 최종성 중복은 경험치 200으로 환급</p>
+    </div>
+  </div>
+
+  <!-- 캐릭터 편성 / 레벨업 -->
+  <div id="teamScreen">
+    <div class="panel wide">
+      <h1>캐릭터 편성 & 강화</h1>
+      <p class="subtitle">챕터별로 최대 <b id="teamCount">0/10</b>명 편성 · 단축키 1~9·0으로 소환</p>
+      <div id="metaHud">
+        <span class="mh food">🍗 냥코푸드 <b id="teamFood">0</b></span>
+        <span class="mh xp">✨ 경험치 <b id="teamXp">0</b></span>
+      </div>
+      <div id="teamTabs"></div>
+      <div id="teamSlots"></div>
+      <div id="teamRoster"></div>
+      <div id="teamBtns">
+        <button id="teamClose" class="big alt">닫기</button>
+      </div>
+      <p class="hint">캐릭터 카드의 [투입]으로 편성 변경, [강화]로 레벨업 (최대 Lv30)</p>
     </div>
   </div>
 
@@ -110,6 +149,11 @@
       <h1 id="ovTitle">냥코대전쟁</h1>
       <p class="subtitle" id="ovSub">CHAPTER 1 — 퓨어월드</p>
       <p id="ovDesc">퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.</p>
+      <div id="metaHud">
+        <span class="mh food">🍗 냥코푸드 <b id="mapFood">0</b></span>
+        <span class="mh xp">✨ 경험치 <b id="mapXp">0</b></span>
+      </div>
+      <div id="chapterTabs"></div>
       <div id="mapProgress"><div id="mapFill"></div><span id="mapCount">0/12</span></div>
       <div id="actList"></div>
       <div id="ovBtns"></div>

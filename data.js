@@ -14,6 +14,7 @@ const ELEMENT_COLORS = {
   fire:      '#ff7043',
   lightning: '#ffee58',
   void:      '#b388ff',
+  chaos:     '#ff4081',
 };
 
 const PORTRAIT_FALLBACK = {
@@ -70,7 +71,69 @@ const PLAYER_UNITS = [
     cost: 2200, cd: 30, hp: 24000, atk: 1750, range: 110, speed: 42, size: 36, atkInt: 1.3,
     ability: { type: 'handOfGod', splash: 170, stun: 0.9, mult: 1.8 },
     desc: '기본공격 — 신의 손을 소환해 광역 스턴.' },
+
+  /* ---- 가챠 한정 영웅 (뽑기로 영입) ---- */
+  { id: 'berserker', name: '광전사', icon: '🪓', element: 'fire',
+    cost: 620, cd: 9, hp: 1600, atk: 640, range: 50, speed: 100, size: 21, atkInt: 0.7,
+    ability: { type: 'lastStand', hpPct: 0.35, mult: 2.2 },
+    desc: '체력 35% 이하에서 공격력 2.2배.' },
+  { id: 'sniper', name: '왕국 명사수', icon: '🎯', element: 'light',
+    cost: 500, cd: 8, hp: 680, atk: 540, range: 480, speed: 40, size: 17, atkInt: 2.1,
+    ability: { type: 'chargeKnock', power: 70 },
+    desc: '초장거리 저격 + 넉백.' },
+  { id: 'ninja', name: '그림자 닌자', icon: '🥷', element: 'void',
+    cost: 780, cd: 10, hp: 1100, atk: 520, range: 46, speed: 145, size: 16, atkInt: 0.55,
+    ability: { type: 'assassinate', chance: 0.45, mult: 6 },
+    desc: '45% 확률 치명타 6배.' },
+  { id: 'bard', name: '음유시인', icon: '🎻', element: 'light',
+    cost: 950, cd: 13, hp: 2400, atk: 220, range: 230, speed: 45, size: 18, atkInt: 1.6,
+    ability: { type: 'warcry', radius: 190, mult: 0.35 },
+    desc: '주변 아군 공격력 +35%.' },
+  { id: 'valkyrie', name: '발키리', icon: '🪽', element: 'lightning',
+    cost: 1400, cd: 16, hp: 4600, atk: 660, range: 140, speed: 95, size: 23, atkInt: 1.0,
+    ability: { type: 'stormChain', jump: 230, jumps: 3, mult: 0.5 },
+    desc: '번개 연쇄 3명.' },
+  { id: 'phoenix', name: '불사조', icon: '🦅', element: 'fire',
+    cost: 1600, cd: 20, hp: 4200, atk: 640, range: 160, speed: 70, size: 25, atkInt: 1.3,
+    ability: { type: 'flameBreath', reach: 260, burn: 60, burnDur: 4, rebirth: true },
+    desc: '화염 숨결 + 한 번 부활.' },
+  { id: 'voidwalker', name: '공허의 인도자', icon: '🌑', element: 'void',
+    cost: 2100, cd: 26, hp: 9000, atk: 980, range: 300, speed: 40, size: 28, atkInt: 1.7,
+    ability: { type: 'voidNova', radius: 260, dmgPct: 0.9, slow: 0.5, dur: 2.5, cd: 7 },
+    desc: '주기적 공허 폭발 — 광역 피해 + 둔화.' },
+  { id: 'legendcat', name: '전설의 냥코', icon: '🌟', element: 'light',
+    cost: 2800, cd: 35, hp: 30000, atk: 2400, range: 130, speed: 38, size: 38, atkInt: 1.4,
+    ability: { type: 'quakeSlam', splash: 230, knock: 220, stun: 0.9 },
+    desc: '전설의 강타. 광역 넉백 + 스턴.' },
 ];
+
+/* ---------------- 가챠 (뽑기) ----------------
+   rar: R 70% / SR 24% / SSR 6% — 10연차는 SR 이상 1개 보장
+   중복 획득 시 ★ 돌파(+5% 스탯/별, 최대 5성) */
+const GACHA = {
+  costSingle: 150, costMulti: 1500,
+  rates: { R: 0.70, SR: 0.24, SSR: 0.06 },
+  pool: [
+    { id: 'berserker', rar: 'R' },
+    { id: 'sniper',    rar: 'R' },
+    { id: 'ninja',     rar: 'R' },
+    { id: 'bard',      rar: 'SR' },
+    { id: 'valkyrie',  rar: 'SR' },
+    { id: 'phoenix',   rar: 'SR' },
+    { id: 'voidwalker', rar: 'SSR' },
+    { id: 'legendcat', rar: 'SSR' },
+  ],
+};
+const RARITY_COLORS = { R: '#4fc3f7', SR: '#b388ff', SSR: '#ffd54f' };
+
+/* ---------------- 레벨업 ----------------
+   xpCost(lv) = 8·lv^1.2 (1→30 총 약 6000 XP)
+   스탯 배율 = 1 + 0.04·(lv-1) + 0.05·★   (Lv30 = 2.16배) */
+const LEVEL = {
+  max: 30,
+  xpCost: lv => Math.round(8 * Math.pow(lv, 1.2)),
+  statMult: (lv, star) => (1 + 0.04 * (Math.max(1, lv) - 1)) * (1 + 0.05 * star),
+};
 
 /* ---------------- 적 유닛 (원소 세력) ---------------- */
 const ENEMY_UNITS = [
@@ -107,6 +170,26 @@ const ENEMY_UNITS = [
     ability: { type: 'chain', jumps: 2, dmg: 120 }, bounty: 130 },
   { id: 'volt', name: '뇌전기사', icon: '🌀', element: 'lightning', faction: 'lightning',
     hp: 3000, atk: 340, range: 50, speed: 95, size: 26, atkInt: 1.2, blink: 6, bounty: 180 },
+  /* ----- CHAPTER 2 : 그림자 세력 (void) ----- */
+  { id: 'shade', name: '그림자 병사', icon: '👥', element: 'void', faction: 'void',
+    hp: 1500, atk: 240, range: 46, speed: 90, size: 18, atkInt: 1.0, bounty: 90 },
+  { id: 'stalker', name: '그림자 추적자', icon: '🌑', element: 'void', faction: 'void',
+    hp: 2600, atk: 420, range: 52, speed: 130, size: 21, atkInt: 0.9, blink: 7, bounty: 150 },
+  { id: 'voidMage', name: '공허 술사', icon: '🔮', element: 'void', faction: 'void',
+    hp: 3400, atk: 560, range: 300, speed: 42, size: 20, atkInt: 1.9,
+    ability: { type: 'chain', jumps: 3, dmg: 260 }, bounty: 210 },
+  { id: 'gloombrute', name: '암울한 거수', icon: '🦍', element: 'void', faction: 'void',
+    hp: 14000, atk: 900, range: 70, speed: 30, size: 36, atkInt: 1.7, knockResist: 0.75, bounty: 380 },
+  /* ----- CHAPTER 3 : 혼돈 세력 (chaos) ----- */
+  { id: 'chaosSpawn', name: '혼돈의 개체', icon: '🐙', element: 'chaos', faction: 'chaos',
+    hp: 6500, atk: 700, range: 54, speed: 85, size: 24, atkInt: 1.1, bounty: 240 },
+  { id: 'hexKnight', name: '주문 기사', icon: '⚔️', element: 'chaos', faction: 'chaos',
+    hp: 11000, atk: 980, range: 58, speed: 70, size: 27, atkInt: 1.2,
+    ability: { type: 'burnHit', dps: 60, dur: 4 }, bounty: 330 },
+  { id: 'riftArcher', name: '균열 궁수', icon: '🏹', element: 'chaos', faction: 'chaos',
+    hp: 7800, atk: 1250, range: 340, speed: 48, size: 21, atkInt: 1.8, bounty: 360 },
+  { id: 'annihilator', name: '소멸자', icon: '💀', element: 'chaos', faction: 'chaos',
+    hp: 30000, atk: 1600, range: 80, speed: 34, size: 44, atkInt: 1.8, knockResist: 0.85, bounty: 700 },
 ];
 
 /* ---------------- 주민 (구출 대상) ---------------- */
@@ -196,6 +279,78 @@ const BOSSES = {
       { pct: 0.1,  name: '혼돈', element: 'void',      mods: { atkSpd: 0.5, atk: 1.3, dmgTaken: 0.9 } },
     ],
   },
+  /* ---------- CHAPTER 2 ---------- */
+  umbra: {
+    id: 'umbra', name: '그림자 군주 움브라', icon: '🌑', element: 'void',
+    hp: 260000, atk: 720, range: 130, speed: 30, size: 86, atkInt: 1.5, knockResist: 0.85,
+    bounty: 9000,
+    script: [
+      { id: 'blink',      cd: 8 },
+      { id: 'chainBoss',  cd: 7 },
+      { id: 'summon',     cd: 12, unit: 'stalker', n: 2 },
+      { id: 'advance',    cd: 10, dur: 4 },
+      { id: 'quake',      cd: 9 },
+    ],
+    phases: [
+      { pct: 1,    name: '그림자' },
+      { pct: 0.6,  name: '그림자 · 포식', mods: { atkSpd: 0.75, haste: true } },
+      { pct: 0.25, name: '그림자 · 분열', mods: { atk: 1.3, atkSpd: 0.7 } },
+    ],
+  },
+  nyx: {
+    id: 'nyx', name: '황혼의 닉스', icon: '🌘', element: 'void',
+    hp: 480000, atk: 900, range: 140, speed: 26, size: 90, atkInt: 1.6, knockResist: 0.9,
+    bounty: 15000,
+    script: [
+      { id: 'floodRise',  cd: 13 },
+      { id: 'waterWave',  cd: 8 },
+      { id: 'summon',     cd: 12, unit: 'voidMage', n: 2 },
+      { id: 'heal',       cd: 11 },
+      { id: 'blink',      cd: 9 },
+    ],
+    phases: [
+      { pct: 1,    name: '황혼' },
+      { pct: 0.7,  name: '황혼 · 어둠', mods: { regen: 0.003, dmgTaken: 0.9 } },
+      { pct: 0.35, name: '황혼 · 월식', mods: { atkSpd: 0.6, atk: 1.25, haste: true } },
+    ],
+  },
+  /* ---------- CHAPTER 3 ---------- */
+  chaothos: {
+    id: 'chaothos', name: '혼돈의 대마왕 카오토스', icon: '🐙', element: 'chaos',
+    hp: 950000, atk: 1200, range: 150, speed: 30, size: 98, atkInt: 1.5, knockResist: 0.92,
+    bounty: 25000,
+    script: [
+      { id: 'explosion',  cd: 10 },
+      { id: 'fireZones',  cd: 8 },
+      { id: 'summon',     cd: 13, unit: 'hexKnight', n: 2 },
+      { id: 'chainBoss',  cd: 7 },
+      { id: 'advance',    cd: 11, dur: 4 },
+    ],
+    phases: [
+      { pct: 1,    name: '혼돈' },
+      { pct: 0.65, name: '혼돈 · 변이', mods: { atk: 1.2, regen: 0.002 } },
+      { pct: 0.3,  name: '혼돈 · 심연', mods: { atkSpd: 0.55, atk: 1.35, haste: true } },
+    ],
+  },
+  finality: {
+    id: 'finality', name: '종말의 존재 피날레', icon: '🌌', element: 'chaos',
+    hp: 1300000, atk: 1800, range: 160, speed: 24, size: 110, atkInt: 1.5, knockResist: 0.95,
+    bounty: 50000,
+    script: [
+      { id: 'quake',      cd: 6 },
+      { id: 'explosion',  cd: 7 },
+      { id: 'chainBoss',  cd: 6 },
+      { id: 'fireZones',  cd: 7 },
+      { id: 'summon',     cd: 11, unit: 'annihilator', n: 1 },
+      { id: 'blink',      cd: 8 },
+    ],
+    phases: [
+      { pct: 1,    name: '종말', element: 'chaos',   mods: { dmgTaken: 1.0 } },
+      { pct: 0.7,  name: '공허', element: 'void',    mods: { regen: 0.002, dmgTaken: 1.05 } },
+      { pct: 0.4,  name: '대재앙', element: 'fire',  mods: { burnAura: 60, atk: 1.2, dmgTaken: 1.1 } },
+      { pct: 0.15, name: '최후', element: 'void',    mods: { atkSpd: 0.5, atk: 1.4, haste: true, regen: 0.004, dmgTaken: 1.2 } },
+    ],
+  },
 };
 
 /* ---------------- 액티브 스킬 (유닛 필드에서 사용) ---------------- */
@@ -211,9 +366,10 @@ const ULTIMATES = [
    story type: narr(내레이션) / who(화자) / objective / boss
    battle.objective.type: survive | destroy | rescue | defend | boss
    ================================================================ */
-const CHAPTER = {
+const CHAPTER_1 = {
   title: 'CHAPTER 1',
   subtitle: '퓨어월드',
+  desc: '퓨어월드에 처음 발생한 균열과 원소 세력의 침공을 막아라. 최종적으로 원소포식자 아르카논을 격파하고 퓨어월드를 지킨다.',
   acts: [
     /* ---------- ACT 1 ---------- */
     {
@@ -552,3 +708,360 @@ const CHAPTER = {
     },
   ],
 };
+
+/* ================================================================
+   CHAPTER 2 — 그림자 균열
+   ================================================================ */
+const CHAPTER_2 = {
+  title: 'CHAPTER 2',
+  subtitle: '그림자 균열',
+  desc: '빛을 먹는 그림자 세력이 국경을 침공한다. 그림자 군주 움브라와 황혼의 닉스를 격파하고 하늘을 되찾아라.',
+  acts: [
+    {
+      id: 'c2a1', kind: 'ACT 1', title: '빛이 꺼진 국경',
+      intro: [
+        { narr: '아르카논 격파 후 3일. 퓨어월드의 하늘이 한쪽에서부터 시커멓게 물들기 시작한다.' },
+        { narr: '빛이 사라진 자리에 새로운 균열이 열리고, 그림자로 이루어진 병력이 걸어 나온다.' },
+        { who: 'mage', text: '원소와 다릅니다. 빛을 먹고 자라는 존재들….' },
+        { who: 'arthur', text: '다시 세운 성벽. 이번에는 무너지지 않는다.' },
+        { objective: '그림자 강하를 85초 동안 막아내라.' },
+      ],
+      battle: {
+        theme: 'storm', playerHp: 60000, riftHp: 160000, income: 55, startMoney: 2400,
+        objective: { type: 'survive', time: 85 },
+        waves: [
+          { at: 6,  unit: 'shade', n: 3, scale: 1.2 },
+          { at: 20, unit: 'stalker', n: 2, scale: 1.2 },
+          { at: 36, unit: 'shade', n: 4, scale: 1.3 },
+          { at: 52, unit: 'voidMage', n: 2, scale: 1.3 },
+          { at: 68, unit: 'gloombrute', n: 1, scale: 1.1 },
+        ],
+        trickle: { every: 13, unit: 'shade', scale: 1.4 },
+      },
+      outro: [
+        { narr: '그림자의 공세가 잠깐 꺾인다. 하지만 하늘의 그림자는 걷히지 않는다.' },
+      ],
+    },
+    {
+      id: 'c2a2', kind: 'ACT 2', title: '암살자의 통로',
+      intro: [
+        { narr: '그림자 병력은 정면이 아니라 성벽 아래 옛 빗물 통로로 침투한다.' },
+        { who: 'soldier', text: '지하 통로 쪽에서 발소리가… 수가 많습니다!' },
+        { objective: '침투 병력을 막고 균열 통로를 붕괴시켜라.' },
+      ],
+      battle: {
+        theme: 'ruins', playerHp: 65000, riftHp: 210000, income: 58, startMoney: 2600,
+        objective: { type: 'destroy' },
+        waves: [
+          { at: 5,  unit: 'stalker', n: 3, scale: 1.25 },
+          { at: 22, unit: 'shade', n: 5, scale: 1.35 },
+          { at: 42, unit: 'voidMage', n: 3, scale: 1.4 },
+          { at: 64, unit: 'gloombrute', n: 2, scale: 1.2 },
+          { at: 90, unit: 'stalker', n: 4, scale: 1.5 },
+        ],
+        trickle: { every: 12, unit: 'shade', scale: 1.5 },
+      },
+      outro: [
+        { narr: '통로가 무너지자 그림자 병력의 보급이 끊긴다.' },
+      ],
+    },
+    {
+      id: 'c2b1', kind: 'BOSS 1', title: '그림자 군주 움브라',
+      intro: [
+        { narr: '꺼진 빛의 중심. 그림자들이 한곳으로 모여 거대한 형체를 이룬다.' },
+        { boss: 'umbra', name: 'BOSS — 그림자 군주 움브라' },
+        { objective: '그림자 군주 움브라를 격파하라.' },
+      ],
+      battle: {
+        theme: 'storm', playerHp: 70000, riftHp: 240000, income: 65, startMoney: 3200,
+        objective: { type: 'boss' },
+        boss: 'umbra', bossAt: 14,
+        waves: [
+          { at: 8,  unit: 'shade', n: 4, scale: 1.35 },
+          { at: 40, unit: 'stalker', n: 3, scale: 1.45 },
+          { at: 76, unit: 'voidMage', n: 3, scale: 1.5 },
+        ],
+        trickle: { every: 17, unit: 'stalker', scale: 1.5 },
+      },
+      outro: [
+        { narr: '움브라가 분해되며 검은 안개로 흩어진다.' },
+        { narr: '안개 사이로 더 깊은 어둠이 모습을 비춘다 — 황혼의 닉스.' },
+      ],
+    },
+    {
+      id: 'c2a3', kind: 'ACT 3', title: '황혼의 진격',
+      intro: [
+        { narr: '움브라가 쓰러지자 그림자 세력의 지휘권이 황혼의 닉스에게 넘어간다.' },
+        { narr: '닉스는 병력을 모으는 대신, 그림자를 직접 전장에 흘려보낸다.' },
+        { objective: '황혼의 공세를 100초 동안 버텨내라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 75000, riftHp: 280000, income: 70, startMoney: 3400,
+        objective: { type: 'survive', time: 100 },
+        waves: [
+          { at: 6,  unit: 'shade', n: 5, scale: 1.4 },
+          { at: 24, unit: 'voidMage', n: 3, scale: 1.5 },
+          { at: 44, unit: 'stalker', n: 4, scale: 1.55 },
+          { at: 66, unit: 'gloombrute', n: 2, scale: 1.3 },
+          { at: 86, unit: 'voidMage', n: 4, scale: 1.6 },
+        ],
+        trickle: { every: 12, unit: 'shade', scale: 1.6 },
+      },
+      outro: [
+        { narr: '100초. 왕국군은 황혼의 공세를 막아낸다.' },
+      ],
+    },
+    {
+      id: 'c2a4', kind: 'ACT 4', title: '빛을 빼앗긴 마을',
+      intro: [
+        { narr: '그림자에 삼켜진 마을. 주민들은 빛을 잃고 제자리에서 얼어있다.' },
+        { who: 'soldier', text: '주민들이 움직이지 않습니다… 그림자가 발을 붙잡고 있습니다!' },
+        { objective: '주민 6명을 그림자에서 구출하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 80000, riftHp: 300000, income: 72, startMoney: 3600,
+        objective: { type: 'rescue', n: 6, maxLost: 3 },
+        waves: [
+          { at: 5,  unit: 'stalker', n: 3, scale: 1.5 },
+          { at: 24, unit: 'shade', n: 5, scale: 1.6 },
+          { at: 46, unit: 'voidMage', n: 3, scale: 1.65 },
+          { at: 70, unit: 'gloombrute', n: 2, scale: 1.4 },
+        ],
+        trickle: { every: 13, unit: 'stalker', scale: 1.65 },
+        villagers: { every: 12, count: 6 },
+      },
+      outro: [
+        { narr: '주민들이 빛을 되찾으며 마을에 불이 다시 켜진다.' },
+        { narr: '하지만 하늘의 그림자는 아직 걷히지 않았다.' },
+      ],
+    },
+    {
+      id: 'c2b2', kind: 'BOSS 2', title: '황혼의 닉스',
+      intro: [
+        { narr: '그림자 세력의 심장부. 황혼의 닉스가 달처럼 걸어 나온다.' },
+        { boss: 'nyx', name: 'BOSS — 황혼의 닉스' },
+        { objective: '황혼의 닉스를 격파하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 90000, riftHp: 340000, income: 80, startMoney: 4200,
+        objective: { type: 'boss' },
+        boss: 'nyx', bossAt: 13,
+        flood: 0.3,
+        waves: [
+          { at: 8,  unit: 'shade', n: 5, scale: 1.5 },
+          { at: 40, unit: 'voidMage', n: 3, scale: 1.6 },
+          { at: 74, unit: 'gloombrute', n: 2, scale: 1.45 },
+        ],
+        trickle: { every: 16, unit: 'shade', scale: 1.7 },
+      },
+      outro: [
+        { narr: '닉스가 무너지며 하늘의 그림자가 얇아진다.' },
+        { narr: '그리고 그 틈으로, 전혀 다른 색의 균열이 열린다 — 혼돈.' },
+        { who: 'arthur', text: '이건… 그림자와 다른 무언가다.' },
+      ],
+    },
+    {
+      id: 'c2a5', kind: 'ACT 5', title: '그림자와 혼돈 사이',
+      intro: [
+        { narr: '두 균열이 동시에 열린다. 그림자와 혼돈의 세력이 서로를 밀어내며 진격한다.' },
+        { narr: '왕국군은 두 진영의 협공을 받아야 한다.' },
+        { objective: '혼합 공세를 110초 동안 막아내라.' },
+      ],
+      battle: {
+        theme: 'storm', playerHp: 95000, riftHp: 380000, income: 85, startMoney: 4600,
+        objective: { type: 'survive', time: 110 },
+        hazard: { type: 'storm', interval: 10 },
+        waves: [
+          { at: 6,  unit: 'shade', n: 5, scale: 1.6 },
+          { at: 26, unit: 'chaosSpawn', n: 3, scale: 1.2 },
+          { at: 48, unit: 'stalker', n: 4, scale: 1.7 },
+          { at: 70, unit: 'voidMage', n: 4, scale: 1.7 },
+          { at: 90, unit: 'hexKnight', n: 2, scale: 1.2 },
+        ],
+        trickle: { every: 12, unit: 'shade', scale: 1.75 },
+      },
+      outro: [
+        { narr: '그림자 세력의 마지막 거점이 붕괴한다. 남은 것은 혼돈뿐.' },
+        { clear: 'CHAPTER 2 CLEAR — 그림자 균열' },
+      ],
+    },
+  ],
+};
+
+/* ================================================================
+   CHAPTER 3 — 혼돈의 왕궁
+   ================================================================ */
+const CHAPTER_3 = {
+  title: 'CHAPTER 3',
+  subtitle: '혼돈의 왕궁',
+  desc: '혼돈의 왕궁이 퓨어월드 위로 내려앉았다. 대마왕 카오토스와 종말의 존재 피날레를 무너뜨리고 균열의 끝을 막아라.',
+  acts: [
+    {
+      id: 'c3a1', kind: 'ACT 1', title: '재편된 균열',
+      intro: [
+        { narr: '그림자 균열이 닫히자마자, 왕국 상공의 모든 균열이 하나의 방향으로 정렬한다.' },
+        { narr: '균열 너머의 세계가 가까워지고 있다. 혼돈의 왕궁이 퓨어월드 위로 내려앉는다.' },
+        { who: 'mage', text: '공간 자체가 접히고 있습니다. 저 뒤에 있는 세계가….' },
+        { objective: '혼돈 선봉을 100초 동안 격퇴하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 120000, riftHp: 460000, income: 95, startMoney: 5400,
+        objective: { type: 'survive', time: 100 },
+        hazard: { type: 'fire', interval: 9 },
+        waves: [
+          { at: 6,  unit: 'chaosSpawn', n: 4, scale: 1.3 },
+          { at: 24, unit: 'riftArcher', n: 3, scale: 1.3 },
+          { at: 44, unit: 'hexKnight', n: 3, scale: 1.35 },
+          { at: 66, unit: 'chaosSpawn', n: 5, scale: 1.5 },
+          { at: 86, unit: 'annihilator', n: 1, scale: 1.0 },
+        ],
+        trickle: { every: 13, unit: 'chaosSpawn', scale: 1.55 },
+      },
+      outro: [
+        { narr: '혼돈 선봉이 물러선다. 하지만 왕궁은 아직 낮게 내려오고 있다.' },
+      ],
+    },
+    {
+      id: 'c3a2', kind: 'ACT 2', title: '봉인의 의식',
+      intro: [
+        { narr: '왕국 마법사들이 균열을 닫기 위해 사방에 봉인석을 세운다.' },
+        { who: 'mage', text: '의식이 끝날 때까지 봉인석을 지켜주세요. 부서지면 처음부터 다시 시작합니다.' },
+        { objective: '혼돈의 개체들이 봉인석을 파괴하기 전에 균열을 봉인하라.' },
+      ],
+      battle: {
+        theme: 'ruins', playerHp: 125000, riftHp: 560000, income: 100, startMoney: 5800,
+        objective: { type: 'destroy' },
+        waves: [
+          { at: 5,  unit: 'chaosSpawn', n: 4, scale: 1.4 },
+          { at: 26, unit: 'hexKnight', n: 3, scale: 1.5 },
+          { at: 50, unit: 'riftArcher', n: 4, scale: 1.5 },
+          { at: 76, unit: 'chaosSpawn', n: 5, scale: 1.65 },
+          { at: 104, unit: 'annihilator', n: 1, scale: 1.15 },
+        ],
+        trickle: { every: 13, unit: 'hexKnight', scale: 1.5 },
+      },
+      outro: [
+        { narr: '봉인석이 빛을 뿜는다. 하지만 의식은 완전히 끝나지 않았다.' },
+      ],
+    },
+    {
+      id: 'c3b1', kind: 'BOSS 1', title: '혼돈의 대마왕',
+      intro: [
+        { narr: '왕궁의 문이 열린다. 혼돈의 대마왕 카오토스가 직접 걸어 나온다.' },
+        { boss: 'chaothos', name: 'BOSS — 혼돈의 대마왕 카오토스' },
+        { objective: '카오토스를 격파하고 봉인 의식을 완료하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 135000, riftHp: 600000, income: 110, startMoney: 6600,
+        objective: { type: 'boss' },
+        boss: 'chaothos', bossAt: 14,
+        hazard: { type: 'fire', interval: 13 },
+        waves: [
+          { at: 8,  unit: 'chaosSpawn', n: 5, scale: 1.5 },
+          { at: 44, unit: 'hexKnight', n: 3, scale: 1.6 },
+          { at: 82, unit: 'riftArcher', n: 4, scale: 1.65 },
+        ],
+        trickle: { every: 17, unit: 'chaosSpawn', scale: 1.7 },
+      },
+      outro: [
+        { narr: '카오토스가 무너진다. 하지만 왕궁 깊은 곳에서 더 무거운 기척이 올라온다.' },
+        { who: 'soldier', text: '폐하… 저건 뭐죠?' },
+      ],
+    },
+    {
+      id: 'c3a3', kind: 'ACT 3', title: '소멸의 땅',
+      intro: [
+        { narr: '왕궁이 퓨어월드에 완전히 내려앉는다. 땅이 혼돈에 물들어 생명을 삼킨다.' },
+        { narr: '왕국군은 마지막 주민들을 대피시키며 후위를 지킨다.' },
+        { objective: '90초 동안 성벽을 지키고 주민을 대피시켜라.' },
+      ],
+      battle: {
+        theme: 'burn', playerHp: 145000, riftHp: 680000, income: 115, startMoney: 7200,
+        objective: { type: 'defend', time: 90, rescue: 5, maxLost: 4 },
+        hazard: { type: 'fire', interval: 8 },
+        waves: [
+          { at: 5,  unit: 'hexKnight', n: 4, scale: 1.6 },
+          { at: 26, unit: 'riftArcher', n: 4, scale: 1.6 },
+          { at: 50, unit: 'chaosSpawn', n: 6, scale: 1.75 },
+          { at: 74, unit: 'annihilator', n: 1, scale: 1.3 },
+        ],
+        trickle: { every: 11, unit: 'hexKnight', scale: 1.7 },
+        villagers: { every: 10, count: 5 },
+      },
+      outro: [
+        { narr: '마지막 주민이 성문을 넘는다. 이제 남은 것은 왕궁 심부뿐이다.' },
+      ],
+    },
+    {
+      id: 'c3a4', kind: 'ACT 4', title: '왕궁 돌파',
+      intro: [
+        { narr: '왕국군이 왕궁 내부로 진입한다. 혼돈의 엘리트들이 복도를 지킨다.' },
+        { who: 'arthur', text: '끝까지 간다. 모두 나를 따르라.' },
+        { objective: '왕궁 수비대를 격파하고 최심부로 진입하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 155000, riftHp: 820000, income: 125, startMoney: 8200,
+        objective: { type: 'destroy' },
+        hazard: { type: 'storm', interval: 9 },
+        waves: [
+          { at: 5,  unit: 'hexKnight', n: 5, scale: 1.7 },
+          { at: 28, unit: 'riftArcher', n: 4, scale: 1.75 },
+          { at: 52, unit: 'annihilator', n: 1, scale: 1.4 },
+          { at: 78, unit: 'chaosSpawn', n: 6, scale: 1.9 },
+          { at: 106, unit: 'annihilator', n: 2, scale: 1.45 },
+        ],
+        trickle: { every: 13, unit: 'hexKnight', scale: 1.8 },
+      },
+      outro: [
+        { narr: '왕궁 최심부의 문이 열린다. 문 너머의 존재가 눈을 뜬다.' },
+        { who: 'arthur', text: '이 세계의 끝이… 저것이다.' },
+      ],
+    },
+    {
+      id: 'c3b2', kind: 'WORLD BOSS', title: '종말의 존재',
+      intro: [
+        { narr: '혼돈과 공허, 그리고 재앙의 힘이 한 존재 안으로 모인다.' },
+        { boss: 'finality', name: 'FINAL BOSS — 종말의 존재 피날레' },
+        { objective: '종말의 존재 피날레를 격파하라.' },
+      ],
+      battle: {
+        theme: 'rift', playerHp: 180000, riftHp: 1000000, income: 140, startMoney: 10000,
+        objective: { type: 'boss' },
+        boss: 'finality', bossAt: 12,
+        hazard: { type: 'fire', interval: 11 },
+        waves: [
+          { at: 8,  unit: 'chaosSpawn', n: 6, scale: 1.8 },
+          { at: 44, unit: 'riftArcher', n: 5, scale: 1.9 },
+          { at: 84, unit: 'annihilator', n: 1, scale: 1.6 },
+          { at: 126, unit: 'hexKnight', n: 5, scale: 2.0 },
+        ],
+        trickle: { every: 16, unit: 'chaosSpawn', scale: 2.0 },
+      },
+      outro: [
+        { narr: '피날레의 몸이 균열처럼 갈라진다. 혼돈이 빠져나가려는 순간,' },
+        { narr: '아서왕이 검을 들어 그 틈을 막는다.' },
+      ],
+    },
+    {
+      id: 'c3end', kind: 'ACT 5', title: '균열의 끝',
+      noBattle: true,
+      intro: [
+        { narr: '균열이 닫히려는 순간 강한 흡입이 발생한다. 돌과 무기, 병사들이 끌려간다.' },
+        { who: 'soldier', text: '폐하! 나오십시오!' },
+        { who: 'arthur', text: '이 검이 이 세계의 마지막 문이다.' },
+        { narr: '아서왕이 검을 빛나는 틈에 꽂는다. 혼돈의 흐름이 끊긴다.' },
+        { narr: '왕궁이 붕괴하고, 그림자와 혼돈의 균열이 함께 닫힌다.' },
+        { narr: '퓨어월드의 하늘이 다시 맑아진다.' },
+        { black: '암전.' },
+        { narr: '몇 달 뒤. 왕국은 다시 세워지고, 주민들이 돌아온다.' },
+        { narr: '성벽 위에 놓인 검에는 균열의 흔적이 남아 있다 — 다음을 위해.' },
+        { clear: 'CHAPTER 3 CLEAR — 혼돈의 왕궁' },
+      ],
+    },
+  ],
+};
+
+/* 챕터 목록 (게임 엔진이 순회) */
+const CHAPTERS = [CHAPTER_1, CHAPTER_2, CHAPTER_3];
+/* 하위 호환: 기본 챕터 */
+const CHAPTER = CHAPTER_1;
